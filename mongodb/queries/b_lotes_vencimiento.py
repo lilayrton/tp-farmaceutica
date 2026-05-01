@@ -23,6 +23,8 @@ def lotes_proximos_vencer(dias: int = 90) -> list:
     ahora = datetime.now(timezone.utc)
     limite = ahora + timedelta(days=dias)
 
+    print(f"Parametros: {{'ahora': {ahora}, 'limite': {limite}}}")
+
     pipeline = [
         {
             # Paso 1: Filtrado por fecha y stock.

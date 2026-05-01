@@ -23,6 +23,8 @@ def resumen_efectos_adversos(medicamento_id: str) -> list:
 
     un_anio_atras = datetime.utcnow() - timedelta(days=365)
 
+    print(f"Parametros: {{'medicamento_id': {medicamento_id}, 'un_anio_atras': {un_anio_atras}}}")
+
     pipeline = [
         {
             # Paso 0: Filtro por medicamento y ventana temporal (ultimo anio).

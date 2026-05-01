@@ -43,6 +43,38 @@ RETURN
 LIMIT 20
 """
 
+CYPHER_UPDATED = """
+MATCH (pa1:PrincipioActivo), (pa2:PrincipioActivo), (pa3:PrincipioActivo)
+WHERE pa1.via_metabolismo = pa2.via_metabolismo
+  AND pa2.via_metabolismo = pa3.via_metabolismo
+  AND pa1.nombre < pa2.nombre AND pa2.nombre < pa3.nombre
+  AND NOT EXISTS {
+        MATCH (pa1)-[i:INTERACTUA_CON]-(pa2)
+        WHERE i.severidad IN ['grave', 'contraindicada']
+  }
+  AND NOT EXISTS {
+        MATCH (pa1)-[i:INTERACTUA_CON]-(pa3)
+        WHERE i.severidad IN ['grave', 'contraindicada']
+  }
+  AND NOT EXISTS {
+        MATCH (pa2)-[i:INTERACTUA_CON]-(pa3)
+        WHERE i.severidad IN ['grave', 'contraindicada']
+  }
+MATCH (m1:Medicamento)-[:CONTIENE]->(pa1)
+MATCH (m2:Medicamento)-[:CONTIENE]->(pa2)
+MATCH (m3:Medicamento)-[:CONTIENE]->(pa3)
+WHERE m1 <> m2 AND m2 <> m3 AND m1 <> m3
+RETURN
+  pa1.nombre                            AS pa1,
+  pa2.nombre                            AS pa2,
+  pa3.nombre                            AS pa3,
+  pa1.via_metabolismo                   AS via_compartida,
+  collect(DISTINCT m1.nombre_comercial) AS meds_con_pa1,
+  collect(DISTINCT m2.nombre_comercial) AS meds_con_pa2,
+  collect(DISTINCT m3.nombre_comercial) AS meds_con_pa3
+LIMIT 20
+"""
+
 
 def toxicidad_acumulativa() -> list:
     driver = get_driver()

@@ -33,6 +33,7 @@ RETURN
 def red_principio_activo(nombre: str) -> dict | None:
     driver = get_driver()
     with driver.session() as session:
+        print(f"Parametros: {{'nombre': {nombre}}}")
         result = session.run(CYPHER, nombre=nombre)
         row = result.single()
         data = row.data() if row else None

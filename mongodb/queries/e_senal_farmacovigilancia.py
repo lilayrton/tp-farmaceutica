@@ -27,6 +27,8 @@ RESET = "\033[0m"
 def senal_farmacovigilancia(umbral: int = 3) -> list:
     db = get_db()
 
+    print(f"Parametros: {{'umbral': {umbral}}}")
+
     pipeline = [
         {
             # 1. Filtro dinamico: Ultimos 6 meses y gravedad "grave"

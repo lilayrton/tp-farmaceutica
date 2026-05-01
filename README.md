@@ -1,359 +1,345 @@
 # TP Farmacéutica - Base de Datos 2
 
-Sistema de gestión de información farmacéutica utilizando MongoDB y Neo4j. Este proyecto implementa un sistema de trazabilidad de medicamentos, gestión de ensayos clínicos, farmacovigilancia y análisis de interacciones medicamentosas.
+Sistema de gestión de información farmacéutica con arquitectura **poliglota** (MongoDB + Neo4j + Redis), expuesto mediante una API REST construida con FastAPI.
 
 ## Descripción
 
-El sistema está diseñado con arquitectura multi-base de datos:
-- **MongoDB**: Almacena datos transaccionales (medicamentos, lotes, distribuidores, ensayos clínicos, efectos adversos)
-- **Neo4j**: Gestiona el grafo de relaciones (principios activos, interacciones medicamentosas, patologías, pacientes)
+| Motor | Responsabilidad | Datos que gestiona |
+|-------|----------------|--------------------|
+| **MongoDB** | Fuente de verdad histórica | Medicamentos, lotes, distribuidores, ensayos clínicos, efectos adversos |
+| **Neo4j** | Red de relaciones y grafos | Interacciones entre principios activos, detección de combinaciones peligrosas |
+| **Redis** | Estado operativo en tiempo real | Alertas de farmacovigilancia, monitoreo de cadena de frío, cola de evaluación, control de acceso |
 
 ## Requisitos Previos
 
-Antes de comenzar, asegúrate de tener instalado:
-
-- **Python 3.8+** ([Descargar](https://www.python.org/downloads/))
-- **Docker y Docker Compose** ([Descargar](https://www.docker.com/get-started))
-- **Git** ([Descargar](https://git-scm.com/downloads))
+- **Python 3.11+**
+- **Docker y Docker Compose**
 
 ## Estructura del Proyecto
 
 ```
 tp-farmaceutica/
-├── mongodb/                    # Conexión y queries MongoDB
-│   ├── connection.py          # Cliente MongoDB
-│   ├── init_indexes.py        # Índices de rendimiento
-│   └── queries/               # Consultas MongoDB (a-e)
-│       ├── a_trazabilidad.py
-│       ├── b_lotes_vencimiento.py
-│       ├── c_efectos_adversos.py
-│       ├── d_ensayos_fase_iii.py
-│       └── e_senal_farmacovigilancia.py
-├── neo4j_db/                  # Conexión y queries Neo4j
-│   ├── connection.py          # Driver Neo4j
-│   ├── init_constraints.py    # Constraints y índices
-│   └── queries/               # Consultas Neo4j (a-e)
-│       ├── a_interacciones_prescripcion.py
-│       ├── b_red_principio_activo.py
-│       ├── c_toxicidad_acumulativa.py
-│       ├── d_pa_mas_peligroso.py
-│       └── e_prediccion_interacciones.py
-├── seed/                      # Generador de datos de prueba
-│   ├── config.py              # Configuración central
-│   ├── generar_datos.py       # Script principal
-│   ├── datos_maestros.py      # Datos base de principios activos
-│   ├── generador_mongo.py     # Generador para MongoDB
-│   └── generador_neo4j.py     # Generador para Neo4j
-├── docker-compose.yml         # Orquestación de contenedores
-└── requirements.txt           # Dependencias Python
+├── mongodb/                    # Capa MongoDB (TP1)
+│   ├── connection.py
+│   ├── init_indexes.py
+│   └── queries/               # Consultas a-e
+├── neo4j_db/                  # Capa Neo4j (TP1)
+│   ├── connection.py
+│   ├── init_constraints.py
+│   └── queries/               # Consultas a-e
+├── redis_db/                  # Capa Redis (TP2)
+│   ├── connection.py          # Cliente configurable por env vars
+│   └── queries/
+│       ├── a_alertas_farmacovigilancia.py  # SORTED SET
+│       ├── b_cadena_frio.py                # STREAM
+│       └── c_control_acceso.py            # HASH + LIST + STRING
+├── api/                       # API REST poliglota (TP2)
+│   ├── main.py                # FastAPI app
+│   ├── models.py              # Modelos Pydantic
+│   └── routers/
+│       ├── op1_panel.py               # GET  /panel
+│       ├── op2_prescripcion.py        # POST /prescripcion/verificar
+│       ├── op3_trazabilidad.py        # GET  /lote/{numero}/trazabilidad
+│       ├── op4_interacciones.py       # GET  /medicamento/{id}/interacciones
+│       └── op5_cierre_alerta.py       # POST /alerta/cerrar
+├── seed/
+│   ├── config.py
+│   ├── generar_datos.py       # Script principal (soporta --redis-load)
+│   ├── datos_maestros.py
+│   ├── generador_mongo.py
+│   ├── generador_neo4j.py
+│   └── generador_redis.py     # Seed para Redis (TP2)
+├── docker-compose.yml         # MongoDB + Neo4j + Redis
+└── requirements.txt
 ```
 
-## Instalación Paso a Paso
+---
 
-### 1. Clonar el Repositorio
+## Instalación
+
+### 1. Clonar y crear entorno virtual
 
 ```bash
 git clone https://github.com/valentinnavalos/tp-farmaceutica.git
 cd tp-farmaceutica
-```
 
-### 2. Instalar Dependencias Python
-
-Crea un entorno virtual (recomendado):
-
-```bash
-# En macOS/Linux
 python3 -m venv venv
-source venv/bin/activate
-
-# En Windows
-python -m venv venv
-venv\Scripts\activate
-```
-
-Instala las dependencias:
-
-```bash
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Las dependencias incluyen:
-- `pymongo>=4.6` - Driver de MongoDB
-- `neo4j>=5.0` - Driver de Neo4j
-
-### 3. Configurar las Bases de Datos
-
-#### Opción A: Usando Docker (Recomendado)
-
-Inicia los contenedores de MongoDB y Neo4j:
+### 2. Levantar los tres motores con Docker
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-Esto levantará:
-- **MongoDB** en `localhost:27017`
-- **Mongo Express** (UI) en `http://localhost:8081`
-- **Neo4j** en `localhost:7687` (Bolt) y `http://localhost:7474` (Browser)
-  - Usuario: `neo4j`
-  - Contraseña: `farmaceutica`
+Servicios disponibles:
 
-Verifica que los contenedores estén corriendo:
+| Servicio | URL / Puerto |
+|---------|-------------|
+| MongoDB | `localhost:27017` |
+| Mongo Express (UI) | `http://localhost:8081` |
+| Neo4j Browser | `http://localhost:7474` (user: `neo4j` / pass: `farmaceutica`) |
+| Neo4j Bolt | `localhost:7687` |
+| Redis | `localhost:6379` |
+
+### 3. Generar y cargar datos de prueba
 
 ```bash
-docker-compose ps
+# Genera + carga en MongoDB, Neo4j y Redis de una vez
+PYTHONPATH=. python seed/generar_datos.py --all --redis-load
 ```
 
-#### Opción B: Instalación Local
+Flags disponibles:
 
-Si prefieres no usar Docker, instala MongoDB y Neo4j localmente:
+| Flag | Acción |
+|------|--------|
+| *(sin flags)* | Solo genera archivos JSON y .cypher |
+| `--mongo-load` | Carga en MongoDB |
+| `--neo4j-load` | Carga en Neo4j |
+| `--redis-load` | Carga datos de prueba en Redis |
+| `--all` | Carga en los tres motores |
 
-- **MongoDB**: [Guía de instalación](https://www.mongodb.com/docs/manual/installation/)
-- **Neo4j**: [Guía de instalación](https://neo4j.com/docs/operations-manual/current/installation/)
-
-Luego, ajusta las credenciales en `seed/config.py`:
-
-```python
-MONGO_URI  = "mongodb://localhost:27017"
-MONGO_DB   = "farmaceutica_tp"
-
-NEO4J_URI  = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASS = "farmaceutica"
-```
-
-### 4. Generar y Cargar Datos de Prueba
-
-El script `generar_datos.py` crea datos coherentes para ambas bases de datos.
-
-#### Opción 1: Generar y Cargar Todo Automáticamente
+### 4. Inicializar índices y constraints (opcional, ya incluido en `--all`)
 
 ```bash
-cd seed
-python generar_datos.py --all
+PYTHONPATH=. python -m mongodb.init_indexes
+PYTHONPATH=. python -m neo4j_db.init_constraints
 ```
 
-Este comando:
-1. Genera datos sintéticos coherentes
-2. Guarda archivos JSON en `seed/output/mongodb/`
-3. Guarda script Cypher en `seed/output/neo4j/carga_neo4j.cypher`
-4. Carga automáticamente en MongoDB
-5. Carga automáticamente en Neo4j
+---
 
-#### Opción 2: Solo Generar Archivos (Sin Cargar)
+## API REST — Capa Poliglota (TP2)
+
+### Arrancar la API
 
 ```bash
-cd seed
-python generar_datos.py
+PYTHONPATH=. uvicorn api.main:app --reload
 ```
 
-Luego carga manualmente:
+La API queda disponible en `http://localhost:8000`.  
+Documentación interactiva (Swagger): `http://localhost:8000/docs`
 
-**Para MongoDB:**
+### Variables de entorno (opcionales)
+
+Todas las conexiones tienen defaults para desarrollo local. Para sobreescribir:
 
 ```bash
-mongoimport --db farmaceutica_tp --collection principios_activos --file output/mongodb/principios_activos.json
-mongoimport --db farmaceutica_tp --collection medicamentos --file output/mongodb/medicamentos.json
-mongoimport --db farmaceutica_tp --collection distribuidores --file output/mongodb/distribuidores.json
-mongoimport --db farmaceutica_tp --collection lotes --file output/mongodb/lotes.json
-mongoimport --db farmaceutica_tp --collection ensayos_clinicos --file output/mongodb/ensayos_clinicos.json
-mongoimport --db farmaceutica_tp --collection efectos_adversos --file output/mongodb/efectos_adversos.json
+MONGO_URI=mongodb://localhost:27017/farmaceutica_tp
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=farmaceutica
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
 ```
 
-**Para Neo4j:**
+### Endpoints
+
+#### OP-1 — Panel de farmacovigilancia en tiempo real (3 motores)
+
+```
+GET /panel
+```
+
+Consolida el estado de riesgo del sistema: alertas activas y cola (Redis), medicamentos más reportados del último mes (MongoDB), principios activos más peligrosos (Neo4j).
+
+---
+
+#### OP-2 — Verificación de prescripción (3 motores)
+
+```
+POST /prescripcion/verificar
+```
+
+```json
+{
+  "paciente_id": "PAC-2024-00001",
+  "medicamento_id": "<ObjectId del medicamento>"
+}
+```
+
+Detecta interacciones en Neo4j → verifica alertas activas en Redis → recupera historial en MongoDB → si hay riesgo grave, publica alerta en Redis.
+
+---
+
+#### OP-3 — Trazabilidad de lote y cadena de frío (2 motores)
+
+```
+GET /lote/{numero_lote}/trazabilidad?vehiculo_id=VEH002
+```
+
+Lee el STREAM de temperatura del vehículo (Redis) y si detecta ruptura publica alerta. Retorna también la trazabilidad completa del lote (MongoDB).
+
+---
+
+#### OP-4 — Análisis de interacciones para nuevo medicamento (2 motores)
+
+```
+GET /medicamento/{medicamento_id}/interacciones
+GET /medicamento/nuevo/interacciones?principios_activos=Amoxicilina&principios_activos=Clavulanato
+```
+
+Recupera los principios activos del medicamento (MongoDB) y mapea todas sus interacciones conocidas con medicamentos existentes (Neo4j), ordenadas por severidad.
+
+---
+
+#### OP-5 — Cierre de alerta de farmacovigilancia (3 motores)
+
+```
+POST /alerta/cerrar
+```
+
+```json
+{
+  "alerta_id": "ALT-A1B2C3D4",
+  "medicamento_id": "MED001",
+  "resultado": "confirmado",
+  "investigador_id": "INV001",
+  "acciones_tomadas": "Suspensión del lote y notificación a ANMAT",
+  "nueva_interaccion": {
+    "pa1": "Warfarina",
+    "pa2": "Ibuprofeno",
+    "tipo": "farmacocinetica",
+    "severidad": "grave",
+    "mecanismo": "Desplazamiento de proteínas plasmáticas"
+  }
+}
+```
+
+Elimina la alerta de Redis (y decrementa contador si es falso positivo) → persiste el dictamen en MongoDB → si se confirmó nueva interacción, la crea en el grafo Neo4j.
+
+---
+
+## Consultas individuales (TP1)
+
+### MongoDB
 
 ```bash
-cypher-shell -u neo4j -p farmaceutica --file output/neo4j/carga_neo4j.cypher
+PYTHONPATH=. python -m mongodb.queries.a_trazabilidad <numero_lote>
+PYTHONPATH=. python -m mongodb.queries.b_lotes_vencimiento
+PYTHONPATH=. python -m mongodb.queries.c_efectos_adversos <medicamento_id>
+PYTHONPATH=. python -m mongodb.queries.d_ensayos_fase_iii
+PYTHONPATH=. python -m mongodb.queries.e_senal_farmacovigilancia
 ```
 
-#### Opción 3: Cargar Solo en un Motor
+### Neo4j
 
 ```bash
-# Solo MongoDB
-python generar_datos.py --mongo-load
-
-# Solo Neo4j
-python generar_datos.py --neo4j-load
+PYTHONPATH=. python -m neo4j_db.queries.a_interacciones_prescripcion <paciente_id>
+PYTHONPATH=. python -m neo4j_db.queries.b_red_principio_activo <nombre_pa>
+PYTHONPATH=. python -m neo4j_db.queries.c_toxicidad_acumulativa
+PYTHONPATH=. python -m neo4j_db.queries.d_pa_mas_peligroso --top 10
+PYTHONPATH=. python -m neo4j_db.queries.e_prediccion_interacciones Amoxicilina Clavulanato
 ```
 
-### 5. Inicializar Índices y Constraints
-
-Después de cargar los datos, crea los índices y constraints para optimizar las consultas:
-
-**MongoDB:**
+### Redis (módulos individuales)
 
 ```bash
-cd ..  # Volver a la raíz del proyecto
-python -m mongodb.init_indexes
+PYTHONPATH=. python -m redis_db.queries.a_alertas_farmacovigilancia
+PYTHONPATH=. python -m redis_db.queries.b_cadena_frio
+PYTHONPATH=. python -m redis_db.queries.c_control_acceso
 ```
 
-**Neo4j:**
+### Demo completo (TP1)
 
 ```bash
-python -m neo4j_db.init_constraints
+PYTHONPATH=. python run_demo.py
 ```
 
-## Uso del Sistema
+---
 
-### Ejecutar Consultas de MongoDB
+## Datos generados
 
-Las consultas están en el directorio `mongodb/queries/`:
+| Motor | Entidad | Cantidad |
+|-------|---------|----------|
+| MongoDB | Principios activos | 80 |
+| MongoDB | Medicamentos | 200 |
+| MongoDB | Distribuidores | 50 |
+| MongoDB | Lotes | 150 |
+| MongoDB | Ensayos clínicos | 20 |
+| MongoDB | Efectos adversos | 300 |
+| Neo4j | `:PrincipioActivo` | 80 |
+| Neo4j | `:Medicamento` | 200 |
+| Neo4j | `:Patologia` | ~40 |
+| Neo4j | `:EnsayoClinico` | 20 |
+| Neo4j | `:Paciente` | 50 |
+| Redis | Alertas (SORTED SET) | 10 |
+| Redis | Lecturas temperatura (STREAM) | 30 (3 vehículos; VEH002 con ruptura) |
+| Redis | Reportes pendientes (LIST) | 5 |
+| Redis | Accesos a ensayos (HASH) | 4 |
+| Redis | Contadores 24h (STRING) | 4 (MED001 y MED003 sobre umbral) |
+
+---
+
+## Verificación
 
 ```bash
-# Consulta A: Trazabilidad completa de un lote
-python -m mongodb.queries.a_trazabilidad
+# MongoDB
+mongosh --eval "use farmaceutica_tp; db.medicamentos.countDocuments()"
 
-# Consulta B: Lotes próximos a vencer
-python -m mongodb.queries.b_lotes_vencimiento
+# Neo4j
+cypher-shell -u neo4j -p farmaceutica "MATCH (n) RETURN labels(n), count(n)"
 
-# Consulta C: Efectos adversos por medicamento
-python -m mongodb.queries.c_efectos_adversos
-
-# Consulta D: Ensayos clínicos fase III
-python -m mongodb.queries.d_ensayos_fase_iii
-
-# Consulta E: Señales de farmacovigilancia
-python -m mongodb.queries.e_senal_farmacovigilancia
+# Redis
+redis-cli ZCARD alertas:farmacovigilancia   # cantidad de alertas
+redis-cli XLEN temperatura:stream           # lecturas de temperatura
+redis-cli LLEN cola:efectos_adversos        # reportes pendientes
 ```
 
-### Ejecutar Consultas de Neo4j
+---
 
-Las consultas están en el directorio `neo4j_db/queries/`:
+## Detener y limpiar
 
 ```bash
-# Consulta A: Interacciones en prescripciones
-python -m neo4j_db.queries.a_interacciones_prescripcion
+# Detener contenedores
+docker compose down
 
-# Consulta B: Red de principios activos
-python -m neo4j_db.queries.b_red_principio_activo
-
-# Consulta C: Toxicidad acumulativa
-python -m neo4j_db.queries.c_toxicidad_acumulativa
-
-# Consulta D: Principio activo más peligroso
-python -m neo4j_db.queries.d_pa_mas_peligroso
-
-# Consulta E: Predicción de interacciones
-python -m neo4j_db.queries.e_prediccion_interacciones
+# Eliminar datos y reiniciar desde cero
+docker compose down -v
+docker compose up -d
+PYTHONPATH=. python seed/generar_datos.py --all --redis-load
 ```
 
-## Verificación de la Instalación
+---
 
-### Verificar MongoDB
+## Solución de problemas
 
-1. **Usando Mongo Express** (si usas Docker):
-   - Abre `http://localhost:8081` en tu navegador
-   - Navega a la base de datos `farmaceutica_tp`
-   - Deberías ver 6 colecciones con datos
-
-2. **Usando mongosh:**
-
+**Error: "No se pudo conectar a MongoDB"**
 ```bash
-mongosh
-use farmaceutica_tp
-show collections
-db.medicamentos.countDocuments()
+docker compose restart mongodb
 ```
 
-### Verificar Neo4j
-
-1. **Usando Neo4j Browser:**
-   - Abre `http://localhost:7474` en tu navegador
-   - Autentícate con usuario `neo4j` y contraseña `farmaceutica`
-   - Ejecuta: `MATCH (n) RETURN count(n)`
-   - Deberías ver múltiples nodos
-
-2. **Usando cypher-shell:**
-
+**Error: "No se pudo conectar a Neo4j"**
 ```bash
-cypher-shell -u neo4j -p farmaceutica
-MATCH (n) RETURN labels(n), count(n);
+# Neo4j tarda ~30 segundos en iniciar
+docker compose logs neo4j
 ```
 
-## Datos Generados
-
-El generador crea:
-
-**MongoDB:**
-- 80 Principios Activos
-- 200 Medicamentos
-- 50 Distribuidores
-- 150 Lotes (con trazabilidad)
-- 20 Ensayos Clínicos
-- 300 Efectos Adversos
-
-**Neo4j:**
-- 80 Nodos `:PrincipioActivo`
-- 200 Nodos `:Medicamento`
-- ~40 Nodos `:Patologia`
-- 20 Nodos `:EnsayoClinico`
-- 50 Nodos `:Paciente`
-- Relaciones: `CONTIENE`, `INTERACTUA_CON`, `AFECTA`, `ESTUDIA`, `TOMA`
-
-## Detener y Limpiar
-
-### Detener Contenedores
-
+**Error: "No se pudo conectar a Redis"**
 ```bash
-docker-compose down
+docker compose restart redis
+redis-cli ping   # debe responder PONG
 ```
 
-### Limpiar Datos (Reinicio Completo)
-
+**Error al importar módulos**
 ```bash
-# Eliminar volúmenes de datos
-docker-compose down -v
-
-# Regenerar datos
-cd seed
-python generar_datos.py --all
+# Siempre ejecutar desde la raíz del proyecto con PYTHONPATH=.
+PYTHONPATH=. python -m mongodb.queries.a_trazabilidad
 ```
 
-## Solución de Problemas
+---
 
-### Error: "No se pudo conectar a MongoDB"
+## Tecnologías
 
-- Verifica que Docker esté corriendo: `docker ps`
-- Reinicia los contenedores: `docker-compose restart mongodb`
-- Verifica el puerto: `lsof -i :27017` (macOS/Linux) o `netstat -an | findstr 27017` (Windows)
+- **Python 3.11+**
+- **MongoDB 7** + pymongo
+- **Neo4j 5** + neo4j-driver
+- **Redis 7** + redis-py
+- **FastAPI** + Uvicorn
+- **Docker & Docker Compose**
 
-### Error: "No se pudo conectar a Neo4j"
+---
 
-- Espera ~30 segundos después de `docker-compose up` (Neo4j tarda en iniciar)
-- Verifica logs: `docker-compose logs neo4j`
-- Verifica credenciales en `seed/config.py`
-
-### Error: "pymongo no instalado"
-
-```bash
-pip install pymongo neo4j
-```
-
-### Error al importar módulos
-
-Asegúrate de estar en la raíz del proyecto y usar el formato `-m`:
-
-```bash
-# ✅ Correcto
-python -m mongodb.queries.a_trazabilidad
-
-# ❌ Incorrecto
-python mongodb/queries/a_trazabilidad.py
-```
-
-## Tecnologías Utilizadas
-
-- **Python 3.8+** - Lenguaje de programación
-- **MongoDB 7** - Base de datos documental
-- **Neo4j 5** - Base de datos de grafos
-- **Docker & Docker Compose** - Contenedorización
-- **pymongo** - Driver Python para MongoDB
-- **neo4j-driver** - Driver Python para Neo4j
-
-## Contribuciones
-
-Este proyecto es parte del Trabajo Práctico de Ingeniería de Datos 2 - UADE.
-
-## Licencia
-
-Proyecto académico
+*Trabajo Práctico Integrador — Ingeniería de Datos II — UADE*

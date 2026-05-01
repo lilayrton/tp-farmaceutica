@@ -42,6 +42,7 @@ LIMIT $top
 def pa_mas_peligroso(top: int = 10) -> list:
     driver = get_driver()
     with driver.session() as session:
+        print(f"Parametros: {{'top': {top}}}")
         result = session.run(CYPHER, top=top)
         rows = [r.data() for r in result]
     driver.close()

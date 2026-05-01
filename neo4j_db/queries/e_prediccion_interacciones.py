@@ -52,6 +52,7 @@ RESET = "\033[0m"
 def prediccion_interacciones(pa_del_nuevo: list[str]) -> list:
     driver = get_driver()
     with driver.session() as session:
+        print(f"Parametros: {{'pa_del_nuevo': {pa_del_nuevo}}}")
         result = session.run(CYPHER, pa_del_nuevo=pa_del_nuevo)
         rows = [r.data() for r in result]
     driver.close()

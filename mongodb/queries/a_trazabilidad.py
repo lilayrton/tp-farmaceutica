@@ -40,6 +40,9 @@ PIPELINE_TRAZABILIDAD = lambda numero_lote: [
 
 def trazabilidad_lote(numero_lote: str) -> dict | None:
     db = get_db()
+
+    print(f"Parametros: {{'numero_lote': {numero_lote}}}")
+    
     resultados = list(db.lotes.aggregate(PIPELINE_TRAZABILIDAD(numero_lote)))
     return resultados[0] if resultados else None
 

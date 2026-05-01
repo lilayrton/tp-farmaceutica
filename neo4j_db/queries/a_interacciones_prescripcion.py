@@ -50,6 +50,7 @@ RESET = "\033[0m"
 def interacciones_prescripcion(id_anonimo: str) -> list:
     driver = get_driver()
     with driver.session() as session:
+        print(f"Parametros: {{'id_anonimo': {id_anonimo}}}")
         result = session.run(CYPHER, id_anonimo=id_anonimo)
         rows = [r.data() for r in result]
     driver.close()

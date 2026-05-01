@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-generar_datos.py — Generador de datos de prueba coherentes para MongoDB y Neo4j.
+generar_datos.py — Generador de datos de prueba coherentes para MongoDB, Neo4j y Redis.
 
 Uso:
     python generar_datos.py                    # genera archivos JSON + .cypher
     python generar_datos.py --mongo-load       # además carga en MongoDB local
     python generar_datos.py --neo4j-load       # además carga en Neo4j local
-    python generar_datos.py --all              # genera + carga en ambos motores
+    python generar_datos.py --redis-load       # además carga en Redis local
+    python generar_datos.py --all              # genera + carga en los tres motores
 
 Salida (carpeta ./output/):
     mongodb/
@@ -20,7 +21,7 @@ Salida (carpeta ./output/):
         carga_neo4j.cypher      <- ejecutar en cypher-shell
         resumen_nodos.txt
 
-Requiere: pip install faker pymongo neo4j
+Requiere: pip install faker pymongo neo4j redis
 """
 
 import argparse
@@ -207,12 +208,14 @@ def main():
     parser = argparse.ArgumentParser(description="Generador de datos de prueba — TP Farmacéutica")
     parser.add_argument("--mongo-load", action="store_true", help="Cargar datos en MongoDB")
     parser.add_argument("--neo4j-load", action="store_true", help="Cargar datos en Neo4j")
-    parser.add_argument("--all",        action="store_true", help="Generar y cargar en ambos motores")
+    parser.add_argument("--redis-load", action="store_true", help="Cargar datos en Redis")
+    parser.add_argument("--all",        action="store_true", help="Generar y cargar en los tres motores")
     args = parser.parse_args()
 
     if args.all:
         args.mongo_load = True
         args.neo4j_load = True
+        args.redis_load = True
 
     print("="*60)
     print("GENERADOR DE DATOS — TP FARMACÉUTICA (Tema 13)")
@@ -300,6 +303,19 @@ def main():
     if args.neo4j_load:
         print("\n→ Cargando en Neo4j...")
         cargar_neo4j(cypher_path)
+
+    if args.redis_load:
+        print("\n→ Cargando en Redis...")
+        try:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).parent.parent))
+            from redis_db.connection import get_redis
+            from seed.generador_redis import seed_redis
+            r = get_redis()
+            r.ping()
+            seed_redis(r)
+        except Exception as e:
+            print(f"  [ERROR] No se pudo conectar a Redis: {e}")
 
     # ── 5. Resumen ───────────────────────────────────────────────────────────
     imprimir_resumen(colecciones_mongo, stats_neo4j)
