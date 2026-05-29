@@ -65,7 +65,8 @@ def detectar_ruptura_cadena_frio(
     """Detecta ruptura de cadena de frío si las últimas 2 lecturas del vehículo
     están fuera del rango. Si hay ruptura, publica alerta automáticamente."""
     temp_min, temp_max = rango
-    ultimas = obtener_ultimas_lecturas(r, vehiculo_id, n=2)
+    ultimas = obtener_ultimas_lecturas(r, vehiculo_id, n=12)
+    ultimas = ultimas[:2]
 
     resultado = {
         "vehiculo_id": vehiculo_id,

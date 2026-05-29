@@ -30,10 +30,10 @@ def _mongo_pa_del_medicamento(medicamento_id: str) -> dict:
     db = get_db()
     try:
         med_oid = ObjectId(medicamento_id)
+        med = db.medicamentos.find_one({"_id": med_oid})
     except Exception:
-        return {"error": f"ID de medicamento inválido: {medicamento_id}", "nombres": [], "ids": []}
+        med = db.medicamentos.find_one({"codigo": medicamento_id})
 
-    med = db.medicamentos.find_one({"_id": med_oid})
     if not med:
         return {"error": f"Medicamento '{medicamento_id}' no encontrado", "nombres": [], "ids": []}
 
@@ -41,7 +41,7 @@ def _mongo_pa_del_medicamento(medicamento_id: str) -> dict:
     nombres_pa = []
     pa_oids = []
     for pa_ref in pa_ids_raw:
-        pa_id = pa_ref.get("id") if isinstance(pa_ref, dict) else pa_ref
+        pa_id = pa_ref.get("pa_id") if isinstance(pa_ref, dict) else pa_ref
         if pa_id:
             pa_oid = ObjectId(str(pa_id))
             pa_oids.append(pa_oid)
@@ -103,7 +103,7 @@ def _mongo_historial_efectos_grupo(pa_oids: list) -> list:
 
     # 1. Medicamentos que comparten al menos un PA con el medicamento a prescribir
     meds_mismo_grupo = list(db.medicamentos.find(
-        {"principios_activos": {"$elemMatch": {"$in": pa_oids}}},
+        {"principios_activos.pa_id": {"$in": pa_oids}},
         {"_id": 1}
     ))
     med_ids = [m["_id"] for m in meds_mismo_grupo]
@@ -121,7 +121,7 @@ def _mongo_historial_efectos_grupo(pa_oids: list) -> list:
         {"$limit": 10},
         {"$project": {
             "_id": 0,
-            "efecto": "$termino_meddra",
+            "efecto": "$descripcion",
             "gravedad": 1,
             "pais": "$pais_reporte",
             "fecha": 1,

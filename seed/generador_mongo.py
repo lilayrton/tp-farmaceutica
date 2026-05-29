@@ -144,6 +144,7 @@ def generar_medicamentos(pa_docs: list, pa_id_map: dict) -> tuple:
 
         doc = {
             "_id":               oid,
+            "codigo":            f"MED{str(i+1).zfill(3)}",
             "nombre_comercial":  nombre_comercial,
             "nombre_generico":   pas_sel[0]["nombre"] if pas_sel else "Genérico",
             "forma_farmaceutica":random.choice(formas),

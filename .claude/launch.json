@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Full Stack (Docker Compose)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "--build"],
+      "port": 8000
+    },
+    {
+      "name": "API (uvicorn local)",
+      "runtimeExecutable": "uvicorn",
+      "runtimeArgs": ["api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
+      "port": 8000
+    },
+    {
+      "name": "Mongo Express",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "mongo-express"],
+      "port": 8081
+    },
+    {
+      "name": "Neo4j Browser",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "neo4j"],
+      "port": 7474
+    }
+  ]
+}

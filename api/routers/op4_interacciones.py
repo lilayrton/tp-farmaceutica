@@ -21,17 +21,17 @@ def _mongo_principios_activos(medicamento_id: str) -> dict:
     db = get_db()
     try:
         med_oid = ObjectId(medicamento_id)
+        med = db.medicamentos.find_one({"_id": med_oid})
     except Exception:
-        return {"error": f"ID de medicamento inválido: {medicamento_id}"}
+        med = db.medicamentos.find_one({"codigo": medicamento_id})
 
-    med = db.medicamentos.find_one({"_id": med_oid})
     if not med:
         return {"error": f"Medicamento '{medicamento_id}' no encontrado"}
 
     pa_ids = med.get("principios_activos", [])
     nombres_pa = []
     for pa_ref in pa_ids:
-        pa_id = pa_ref.get("id") if isinstance(pa_ref, dict) else pa_ref
+        pa_id = pa_ref.get("pa_id") if isinstance(pa_ref, dict) else pa_ref
         if pa_id:
             pa_doc = db.principios_activos.find_one({"_id": ObjectId(str(pa_id))})
             if pa_doc:

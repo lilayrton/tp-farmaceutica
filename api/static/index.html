@@ -204,8 +204,8 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="verify-paciente">ID Paciente Anonimizado</label>
-                                        <input type="text" id="verify-paciente" required placeholder="Ej: PAC-2024-00001 (o elige de la semilla)">
-                                        <small class="form-note">Semilla contiene PAC-2024-00001 hasta PAC-2024-00050</small>
+                                        <input type="text" id="verify-paciente" required placeholder="Ej: PAC-2026-12035">
+                                        <small class="form-note">Semilla contiene IDs del tipo PAC-2026-XXXXX (ej: PAC-2026-12035, PAC-2026-59074)</small>
                                     </div>
                                     <div class="form-group">
                                         <label for="verify-medicamento">ID Medicamento (MongoDB ObjectId o Código)</label>
@@ -245,8 +245,8 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="trace-lote-num">Número de Lote (MongoDB)</label>
-                                        <input type="text" id="trace-lote-num" required placeholder="Ej: LOT-2024-0001">
-                                        <small class="form-note">Semilla contiene LOT-2024-0001 hasta LOT-2024-0150</small>
+                                        <input type="text" id="trace-lote-num" required placeholder="Ej: LOT-2026-00001">
+                                        <small class="form-note">Semilla contiene LOT-2026-00001 hasta LOT-2026-00150</small>
                                     </div>
                                     <div class="form-group">
                                         <label for="trace-vehiculo">ID de Vehículo Refrigerado (Redis Stream)</label>
@@ -291,7 +291,7 @@
                                     <div class="form-group">
                                         <label for="interaction-custom-pa">O por Principios Activos Manuales (Separados por coma)</label>
                                         <input type="text" id="interaction-custom-pa" placeholder="Ej: Amoxicilina, Clavulanato, Ibuprofeno">
-                                        <small class="form-note">Ejemplos de la semilla: Paracetamol, Ibuprofeno, Warfarina, Amoxicilina, Ácido Clavulánico</small>
+                                        <small class="form-note">Ejemplos de la semilla: Ibuprofeno, Warfarina, Amoxicilina, Clavulanato, Fluoxetina</small>
                                     </div>
                                 </div>
                                 <button type="submit" class="btn btn-primary">

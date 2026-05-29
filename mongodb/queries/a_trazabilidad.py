@@ -32,6 +32,8 @@ PIPELINE_TRAZABILIDAD = lambda numero_lote: [
             "lote": "$numero_lote",
             "producto_id": "$medicamento_id",
             "planta_origen": "$planta_produccion",
+            "fecha_fabricacion": 1,
+            "fecha_vencimiento": 1,
             "historial_trazabilidad": "$cadena_distribucion",
         }
     },
