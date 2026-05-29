@@ -22,7 +22,7 @@ MATCH (pac:Paciente {id_anonimo: $id_anonimo})-[:TOMA]->(m:Medicamento)
 WITH collect(DISTINCT pa) AS principios
 UNWIND principios AS pa1
 UNWIND principios AS pa2
-WITH pa1, pa2 WHERE id(pa1) < id(pa2)
+WITH pa1, pa2 WHERE elementId(pa1) < elementId(pa2)
 MATCH (pa1)-[i:INTERACTUA_CON]-(pa2)
 RETURN
   pa1.nombre       AS principio_1,

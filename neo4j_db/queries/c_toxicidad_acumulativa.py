@@ -21,7 +21,7 @@ CYPHER = """
 MATCH (pa1:PrincipioActivo), (pa2:PrincipioActivo), (pa3:PrincipioActivo)
 WHERE pa1.via_metabolismo = pa2.via_metabolismo
   AND pa2.via_metabolismo = pa3.via_metabolismo
-  AND id(pa1) < id(pa2) AND id(pa2) < id(pa3)
+  AND elementId(pa1) < elementId(pa2) AND elementId(pa2) < elementId(pa3)
   AND NOT (pa1)-[:INTERACTUA_CON {severidad: 'grave'}]-(pa2)
   AND NOT (pa1)-[:INTERACTUA_CON {severidad: 'contraindicada'}]-(pa2)
   AND NOT (pa1)-[:INTERACTUA_CON {severidad: 'grave'}]-(pa3)

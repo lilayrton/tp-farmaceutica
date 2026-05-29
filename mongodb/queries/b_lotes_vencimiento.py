@@ -36,7 +36,6 @@ def lotes_proximos_vencer(dias: int = 90) -> list:
                     "$lte": limite,
                 },
                 "estado_stock": {"$in": ["en_distribucion", "en_planta"]},
-                "cantidad_producida": {"$gt": 0},
             }
         },
         {
