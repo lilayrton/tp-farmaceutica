@@ -2,10 +2,11 @@
 OP-2 — Verificación de prescripción y detección de riesgos (3 motores)
 
 Orden de consultas:
-  1. Neo4j  → interacciones del paciente con el nuevo medicamento
-  2. Redis  → alertas activas sobre el medicamento a prescribir
-  3. MongoDB→ historial de efectos adversos del paciente con medicamentos similares
-  4. Redis  → si hay interacción grave, escalar/publicar alerta de alta severidad
+  0. MongoDB  → principios activos del medicamento a prescribir (paso previo)
+  1. Neo4j    → interacciones entre los PAs del nuevo medicamento y los meds actuales del paciente
+  2. Redis    → alertas activas sobre el medicamento a prescribir
+  3. MongoDB  → historial de efectos adversos de medicamentos del mismo grupo farmacológico
+  4. Redis    → si hay interacción grave, escalar/publicar alerta de alta severidad
 """
 from datetime import datetime, timedelta
 
@@ -24,18 +25,58 @@ from api.models import VerificarPrescripcionRequest
 router = APIRouter()
 
 
-def _neo4j_interacciones_paciente(paciente_id: str) -> list:
+def _mongo_pa_del_medicamento(medicamento_id: str) -> dict:
+    """Recupera nombres e IDs de principios activos del medicamento a prescribir."""
+    db = get_db()
+    try:
+        med_oid = ObjectId(medicamento_id)
+    except Exception:
+        return {"error": f"ID de medicamento inválido: {medicamento_id}", "nombres": [], "ids": []}
+
+    med = db.medicamentos.find_one({"_id": med_oid})
+    if not med:
+        return {"error": f"Medicamento '{medicamento_id}' no encontrado", "nombres": [], "ids": []}
+
+    pa_ids_raw = med.get("principios_activos", [])
+    nombres_pa = []
+    pa_oids = []
+    for pa_ref in pa_ids_raw:
+        pa_id = pa_ref.get("id") if isinstance(pa_ref, dict) else pa_ref
+        if pa_id:
+            pa_oid = ObjectId(str(pa_id))
+            pa_oids.append(pa_oid)
+            pa_doc = db.principios_activos.find_one({"_id": pa_oid})
+            if pa_doc:
+                nombres_pa.append(pa_doc["nombre"])
+
+    return {
+        "nombre_comercial": med.get("nombre_comercial"),
+        "nombres": nombres_pa,
+        "ids": pa_oids,
+    }
+
+
+def _neo4j_interacciones_prescripcion(paciente_id: str, pa_del_nuevo: list[str]) -> list:
+    """
+    Detecta interacciones entre los PAs del medicamento a prescribir
+    y los PAs de los medicamentos que el paciente ya toma.
+    """
+    if not pa_del_nuevo:
+        return []
     driver = get_driver()
     cypher = """
-    MATCH (pac:Paciente {id_anonimo: $paciente_id})-[:TOMA]->(m:Medicamento)
-          -[:CONTIENE]->(pa:PrincipioActivo)
-    WITH collect(DISTINCT pa) AS principios
-    UNWIND principios AS pa1
-    UNWIND principios AS pa2
-    WITH pa1, pa2 WHERE id(pa1) < id(pa2)
-    MATCH (pa1)-[i:INTERACTUA_CON]-(pa2)
-    RETURN pa1.nombre AS principio_1, pa2.nombre AS principio_2,
-           i.tipo AS tipo_interaccion, i.severidad AS severidad, i.mecanismo AS mecanismo
+    MATCH (pac:Paciente {id_anonimo: $paciente_id})
+          -[:TOMA]->(m:Medicamento)-[:CONTIENE]->(pa_existente:PrincipioActivo)
+    WITH collect(DISTINCT pa_existente) AS pa_actuales
+    UNWIND $pa_del_nuevo AS nombre_nuevo
+    MATCH (pa_nuevo:PrincipioActivo {nombre: nombre_nuevo})
+    UNWIND pa_actuales AS pa_existente
+    MATCH (pa_nuevo)-[i:INTERACTUA_CON]-(pa_existente)
+    RETURN pa_nuevo.nombre    AS pa_nuevo,
+           pa_existente.nombre AS pa_existente,
+           i.tipo             AS tipo_interaccion,
+           i.severidad        AS severidad,
+           i.mecanismo        AS mecanismo
     ORDER BY
       CASE i.severidad
         WHEN 'contraindicada' THEN 1
@@ -45,30 +86,46 @@ def _neo4j_interacciones_paciente(paciente_id: str) -> list:
       END
     """
     with driver.session() as session:
-        result = session.run(cypher, paciente_id=paciente_id)
+        result = session.run(cypher, paciente_id=paciente_id, pa_del_nuevo=pa_del_nuevo)
         return [r.data() for r in result]
 
 
-def _mongo_historial_efectos(medicamento_id: str) -> list:
+def _mongo_historial_efectos_grupo(pa_oids: list) -> list:
+    """
+    Recupera efectos adversos de medicamentos del mismo grupo farmacológico
+    (comparten al menos un principio activo con el medicamento a prescribir).
+    """
     db = get_db()
-    try:
-        med_oid = ObjectId(medicamento_id)
-    except Exception:
-        return []
     seis_meses = datetime.utcnow() - timedelta(days=180)
+
+    if not pa_oids:
+        return []
+
+    # 1. Medicamentos que comparten al menos un PA con el medicamento a prescribir
+    meds_mismo_grupo = list(db.medicamentos.find(
+        {"principios_activos": {"$elemMatch": {"$in": pa_oids}}},
+        {"_id": 1}
+    ))
+    med_ids = [m["_id"] for m in meds_mismo_grupo]
+
+    if not med_ids:
+        return []
+
+    # 2. Efectos adversos de ese grupo en los últimos 6 meses
     pipeline = [
-        {"$match": {"medicamento_id": med_oid, "fecha": {"$gte": seis_meses}}},
+        {"$match": {
+            "medicamento_id": {"$in": med_ids},
+            "fecha": {"$gte": seis_meses},
+        }},
         {"$sort": {"fecha": -1}},
         {"$limit": 10},
-        {
-            "$project": {
-                "_id": 0,
-                "efecto": "$termino_meddra",
-                "gravedad": 1,
-                "pais": "$pais_reporte",
-                "fecha": 1,
-            }
-        },
+        {"$project": {
+            "_id": 0,
+            "efecto": "$termino_meddra",
+            "gravedad": 1,
+            "pais": "$pais_reporte",
+            "fecha": 1,
+        }},
     ]
     return list(db.efectos_adversos.aggregate(pipeline))
 
@@ -78,9 +135,10 @@ def verificar_prescripcion(req: VerificarPrescripcionRequest):
     """
     **OP-2** — Antes de prescribir un medicamento, verifica riesgos en tiempo real:
 
-    1. **Neo4j** detecta interacciones existentes en el grafo del paciente.
-    2. **Redis** consulta alertas activas sobre el medicamento.
-    3. **MongoDB** recupera el historial de efectos adversos recientes.
+    0. **MongoDB** (paso previo) recupera los principios activos del medicamento a prescribir.
+    1. **Neo4j** detecta interacciones entre los PAs del nuevo medicamento y los meds del paciente.
+    2. **Redis** consulta alertas activas sobre el medicamento a prescribir.
+    3. **MongoDB** recupera efectos adversos de medicamentos del mismo grupo farmacológico.
     4. **Redis** publica alerta de alta severidad si hay interacción grave o contraindicada.
     """
     errores = {}
@@ -88,14 +146,25 @@ def verificar_prescripcion(req: VerificarPrescripcionRequest):
     alertas_activas = []
     historial_ea = []
     alerta_generada = None
+    pa_info = {"nombres": [], "ids": []}
 
-    # 1. Neo4j — interacciones del paciente
+    # 0. MongoDB — principios activos del medicamento a prescribir (paso previo)
     try:
-        interacciones = _neo4j_interacciones_paciente(req.paciente_id)
+        pa_info = _mongo_pa_del_medicamento(req.medicamento_id)
+        if "error" in pa_info:
+            errores["mongodb_pa"] = pa_info["error"]
+    except Exception as e:
+        errores["mongodb_pa"] = str(e)
+
+    # 1. Neo4j — interacciones del nuevo medicamento con los del paciente
+    try:
+        interacciones = _neo4j_interacciones_prescripcion(
+            req.paciente_id, pa_info.get("nombres", [])
+        )
     except Exception as e:
         errores["neo4j"] = str(e)
 
-    # 2. Redis — alertas activas sobre el medicamento
+    # 2. Redis — alertas activas sobre el medicamento a prescribir
     try:
         r = get_redis()
         todas = listar_alertas_activas(r)
@@ -103,13 +172,13 @@ def verificar_prescripcion(req: VerificarPrescripcionRequest):
     except Exception as e:
         errores["redis_lectura"] = str(e)
 
-    # 3. MongoDB — historial de efectos adversos
+    # 3. MongoDB — historial de efectos adversos del grupo farmacológico
     try:
-        historial_ea = _mongo_historial_efectos(req.medicamento_id)
+        historial_ea = _mongo_historial_efectos_grupo(pa_info.get("ids", []))
     except Exception as e:
-        errores["mongodb"] = str(e)
+        errores["mongodb_historial"] = str(e)
 
-    # 4. Redis — escalar/publicar alerta si hay interacción grave
+    # 4. Redis — escalar/publicar alerta si hay interacción grave o contraindicada
     hay_grave = any(
         i.get("severidad") in ("grave", "contraindicada") for i in interacciones
     )
@@ -134,6 +203,7 @@ def verificar_prescripcion(req: VerificarPrescripcionRequest):
         "motores": ["Neo4j", "Redis", "MongoDB"],
         "paciente_id": req.paciente_id,
         "medicamento_id": req.medicamento_id,
+        "medicamento": pa_info.get("nombre_comercial"),
         "neo4j": {
             "interacciones_detectadas": interacciones,
             "total": len(interacciones),
@@ -143,7 +213,7 @@ def verificar_prescripcion(req: VerificarPrescripcionRequest):
             "alerta_escalada": alerta_generada,
         },
         "mongodb": {
-            "historial_efectos_adversos_recientes": historial_ea,
+            "historial_efectos_adversos_grupo_farmacologico": historial_ea,
         },
         "riesgo_alto": hay_grave or len(alertas_activas) > 0,
     }
