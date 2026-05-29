@@ -49,7 +49,8 @@ tp-farmaceutica/
 │   ├── generador_mongo.py
 │   ├── generador_neo4j.py
 │   └── generador_redis.py     # Seed para Redis (TP2)
-├── docker-compose.yml         # MongoDB + Neo4j + Redis
+├── docker-compose.yml         # MongoDB + Neo4j + Redis + API
+├── Dockerfile                 # Imagen de la API (python:3.11-slim)
 └── requirements.txt
 ```
 
@@ -57,21 +58,20 @@ tp-farmaceutica/
 
 ## Instalación
 
-### 1. Clonar y crear entorno virtual
+### Opción A — Docker (recomendada)
+
+Requiere únicamente **Docker y Docker Compose**.
 
 ```bash
+# 1. Clonar el repositorio
 git clone https://github.com/valentinnavalos/tp-farmaceutica.git
 cd tp-farmaceutica
 
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 2. Levantar los tres motores con Docker
-
-```bash
+# 2. Levantar todos los servicios (bases de datos + API)
 docker compose up -d
+
+# 3. Cargar datos de prueba (solo ejecutar la 1ra vez cuando aún no hay datos)
+make seed
 ```
 
 Servicios disponibles:
@@ -83,15 +83,37 @@ Servicios disponibles:
 | Neo4j Browser | `http://localhost:7474` (user: `neo4j` / pass: `farmaceutica`) |
 | Neo4j Bolt | `localhost:7687` |
 | Redis | `localhost:6379` |
+| **FastAPI API** | `http://localhost:8000` |
+| **Swagger UI** | `http://localhost:8000/docs` |
 
-### 3. Generar y cargar datos de prueba
+---
+
+### Opción B — Local (sin Docker para la API)
+
+Requiere **Python 3.11+**, Docker (solo para las bases de datos) y el venv activo.
 
 ```bash
-# Genera + carga en MongoDB, Neo4j y Redis de una vez
+git clone https://github.com/valentinnavalos/tp-farmaceutica.git
+cd tp-farmaceutica
+
+# Instalar dependencias
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Levantar solo las bases de datos
+docker compose up -d mongodb neo4j redis
+
+# Cargar datos de prueba
 PYTHONPATH=. python seed/generar_datos.py --all --redis-load
+
+# Arrancar la API
+PYTHONPATH=. uvicorn api.main:app --reload
 ```
 
-Flags disponibles:
+---
+
+### Flags de carga de datos
 
 | Flag | Acción |
 |------|--------|
@@ -101,7 +123,7 @@ Flags disponibles:
 | `--redis-load` | Carga datos de prueba en Redis |
 | `--all` | Carga en los tres motores |
 
-### 4. Inicializar índices y constraints (opcional, ya incluido en `--all`)
+### Inicializar índices y constraints (opcional, ya incluido en `--all`)
 
 ```bash
 PYTHONPATH=. python -m mongodb.init_indexes
@@ -114,9 +136,7 @@ PYTHONPATH=. python -m neo4j_db.init_constraints
 
 ### Arrancar la API
 
-```bash
-PYTHONPATH=. uvicorn api.main:app --reload
-```
+La API se inicia automáticamente con `docker compose up -d` (Opción A). Para desarrollo local sin Docker ver la Opción B en la sección de Instalación.
 
 La API queda disponible en `http://localhost:8000`.  
 Documentación interactiva (Swagger): `http://localhost:8000/docs`
@@ -299,7 +319,7 @@ docker compose down
 # Eliminar datos y reiniciar desde cero
 docker compose down -v
 docker compose up -d
-PYTHONPATH=. python seed/generar_datos.py --all --redis-load
+docker compose exec api python seed/generar_datos.py --all --redis-load
 ```
 
 ---
