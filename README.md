@@ -58,8 +58,6 @@ tp-farmaceutica/
 
 ## Instalación
 
-### Opción A — Docker (recomendada)
-
 Requiere únicamente **Docker y Docker Compose**.
 
 ```bash
@@ -74,6 +72,18 @@ docker compose up -d
 make seed
 ```
 
+## Desarrollo
+
+Una vez que ya está en la compu y se quiere levantar el proyecto:
+
+```bash
+# Con este comando se levanta todo
+docker compose up -d
+
+# Con este otro comando para todo el proyecto
+docker compose down
+```
+
 Servicios disponibles:
 
 | Servicio | URL / Puerto |
@@ -83,77 +93,12 @@ Servicios disponibles:
 | Neo4j Browser | `http://localhost:7474` (user: `neo4j` / pass: `farmaceutica`) |
 | Neo4j Bolt | `localhost:7687` |
 | Redis | `localhost:6379` |
-| **FastAPI API** | `http://localhost:8000` |
-| **Swagger UI** | `http://localhost:8000/docs` |
-
----
-
-### Opción B — Local (sin Docker para la API)
-
-Requiere **Python 3.11+**, Docker (solo para las bases de datos) y el venv activo.
-
-```bash
-git clone https://github.com/valentinnavalos/tp-farmaceutica.git
-cd tp-farmaceutica
-
-# Instalar dependencias
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# Levantar solo las bases de datos
-docker compose up -d mongodb neo4j redis
-
-# Cargar datos de prueba
-PYTHONPATH=. python seed/generar_datos.py --all --redis-load
-
-# Arrancar la API
-PYTHONPATH=. uvicorn api.main:app --reload
-```
-
----
-
-### Flags de carga de datos
-
-| Flag | Acción |
-|------|--------|
-| *(sin flags)* | Solo genera archivos JSON y .cypher |
-| `--mongo-load` | Carga en MongoDB |
-| `--neo4j-load` | Carga en Neo4j |
-| `--redis-load` | Carga datos de prueba en Redis |
-| `--all` | Carga en los tres motores |
-
-### Inicializar índices y constraints (opcional, ya incluido en `--all`)
-
-```bash
-PYTHONPATH=. python -m mongodb.init_indexes
-PYTHONPATH=. python -m neo4j_db.init_constraints
-```
+| **API** | `http://localhost:8000` |
+| **Documentación interactiva** | `http://localhost:8000/docs` |
 
 ---
 
 ## API REST — Capa Poliglota (TP2)
-
-### Arrancar la API
-
-La API se inicia automáticamente con `docker compose up -d` (Opción A). Para desarrollo local sin Docker ver la Opción B en la sección de Instalación.
-
-La API queda disponible en `http://localhost:8000`.  
-Documentación interactiva (Swagger): `http://localhost:8000/docs`
-
-### Variables de entorno (opcionales)
-
-Todas las conexiones tienen defaults para desarrollo local. Para sobreescribir:
-
-```bash
-MONGO_URI=mongodb://localhost:27017/farmaceutica_tp
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=farmaceutica
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_DB=0
-```
 
 ### Endpoints
 
