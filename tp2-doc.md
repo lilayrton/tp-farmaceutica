@@ -233,6 +233,7 @@ El proyecto sigue una arquitectura en capas con separación clara entre acceso a
 | ├── api/                       \# API REST poliglota (TP2) |
 | │   ├── main.py                \# FastAPI app con lifespan \+ health check |
 | │   ├── models.py              \# Modelos Pydantic de request |
+| │   ├── saga.py                \# Orquestador Saga (compensaciones multi-motor) |
 | │   └── routers/ |
 | │       ├── op1\_panel.py               \# GET  /panel |
 | │       ├── op2\_prescripcion.py        \# POST /prescripcion/verificar |
@@ -386,26 +387,43 @@ Request: { alerta_id, medicamento_id, resultado, investigador_id,
            acciones_tomadas, nueva_interaccion? }
      │
      ▼
-  1. Redis
-     eliminar_alerta(alerta_id) → ZRANGE + ZREM
-     Si resultado='falso_positivo': DECR contador:efectos:{med_id}
+  SagaOrchestrator()   ← registra compensaciones en orden LIFO
      │
      ▼
-  2. MongoDB
-     insert_one en dictamenes_alertas
-     { alerta_id, resultado, investigador, acciones, fecha_cierre }
+  1. Redis  ──────────────── Acción: consumir_alerta_maxima() → ZPOPMAX
+     saga.register(         Compensación: ZADD con score original
+       _compensar_restaurar_alerta)
+     Si resultado='falso_positivo':
+       DECR contador:efectos:{med_id}
+       saga.register(_compensar_restaurar_contador)
+     │
+     ▼
+  2. MongoDB  ────────────── Acción: insert_one en dictamenes_alertas
+     saga.register(         Compensación: delete_one por _id insertado
+       _compensar_borrar_dictamen)
      │
      ▼
   3. Neo4j  (solo si resultado='confirmado' Y nueva_interaccion presente)
-     MERGE (pa1)-[i:INTERACTUA_CON {tipo}]-(pa2)
-     ON CREATE SET i.severidad, i.mecanismo, i.confirmada_en
-     ON MATCH  SET i.severidad, i.ultima_confirmacion
+     ────────────────────── Acción: MERGE (pa1)-[i:INTERACTUA_CON]-(pa2)
+     saga.register(         Compensación: DELETE i  (solo si ON CREATE)
+       _compensar_borrar_interaccion)
      │
      ▼
-  JSON: { alerta_id, resultado, redis, mongodb, neo4j, errores:{} }
+  JSON: { alerta_id, resultado, redis, mongodb, neo4j }
+
+  ══════ Si cualquier paso lanza excepción ══════
+     │
+     ▼
+  saga.compensate_all()   ← ejecuta compensaciones en orden inverso
+     3. DELETE interacción Neo4j (si fue creada nueva)
+     2. delete_one dictamen MongoDB
+     1. ZADD alerta de vuelta en Redis  /  INCR contador
+     │
+     ▼
+  JSON: { error, saga: "compensación ejecutada", errores_compensacion? }
 ```
 
-*Cada escritura es independiente (try/except). Si Redis falla, MongoDB y Neo4j igualmente se intentan.*
+*OP-5 usa Saga Orquestada porque ZPOPMAX es destructivo: si MongoDB falla después de consumir la alerta, sin compensación la alerta desaparece sin dejar rastro.*
 
 # Operaciones Políglotas {#operaciones-políglotas}
 
@@ -533,7 +551,22 @@ Endpoint: POST /alerta/cerrar
       DECR contador:efectos:{med\_id} \+ max(0, valor) para evitar negativos  
       
 
-El request body acepta un campo opcional nueva\_interaccion con pa1, pa2, tipo, severidad y mecanismo. Si resultado='confirmado' y este campo está presente, Neo4j ejecuta el MERGE con ON CREATE/ON MATCH para crear o actualizar la relación. Si resultado es 'falso\_positivo', Neo4j queda invalidado y se registra el motivo en la respuesta.
+El request body acepta un campo opcional nueva\_interaccion con pa1, pa2, tipo, severidad y mecanismo. Si resultado='confirmado' y este campo está presente, Neo4j ejecuta el MERGE con ON CREATE/ON MATCH para crear o actualizar la relación. Si resultado es 'falso\_positivo', Neo4j queda omitido y se registra el motivo en la respuesta.
+
+**Atomicidad mediante Saga Orquestada (api/saga.py)**
+
+OP-5 es la única operación del sistema que implementa el patrón Saga porque combina un paso destructivo (ZPOPMAX elimina la alerta de Redis permanentemente) con escrituras posteriores que pueden fallar. Sin mecanismo de compensación, un fallo de MongoDB dejaría la alerta consumida sin dictamen — pérdida irreversible.
+
+La clase `SagaOrchestrator` registra un par acción/compensación por cada paso:
+
+| Paso | Acción | Compensación si falla un paso posterior |
+| ----- | ----- | ----- |
+| 1a | ZPOPMAX — consume la alerta de mayor score | ZADD — re-inserta la alerta con su score original |
+| 1b | DECR — decrementa el contador (falso positivo) | INCR — incrementa el contador de vuelta |
+| 2 | insert\_one — persiste dictamen en MongoDB | delete\_one — borra el dictamen por \_id |
+| 3 | MERGE — crea/actualiza relación en Neo4j | DELETE — borra la relación solo si fue creada nueva (ON CREATE) |
+
+Si cualquier paso lanza excepción, `saga.compensate_all()` ejecuta las compensaciones en orden inverso (LIFO). El flag `_saga_created` guardado como propiedad de la relación Neo4j permite distinguir ON CREATE de ON MATCH: si la relación ya existía antes de esta operación, la compensación no la elimina para no destruir conocimiento preexistente.
 
 # Coherencia entre Motores {#coherencia-entre-motores}
 
@@ -541,11 +574,15 @@ El request body acepta un campo opcional nueva\_interaccion con pa1, pa2, tipo, 
 
 Un sistema con tres motores distintos no puede ofrecer transacciones ACID distribuidas sin un coordinador externo. Este sistema acepta esa limitación de forma explícita y adopta consistencia eventual con manejo de errores parciales.
 
-## **6.2 Patrón implementado: escrituras independientes con registro de errores**
+## **6.2 Patrones implementados: best-effort (OP-1 a OP-4) y Saga Orquestada (OP-5)**
 
-Cada operación multi-motor ejecuta cada escritura en un bloque try/except independiente. Los errores se acumulan sin detener el flujo:
+El sistema emplea dos estrategias de coherencia según la naturaleza de la operación.
 
-| \# Patrón implementado en todos los routers de TP2 |
+**OP-1, 2, 3, 4 — Best-effort con registro de errores**
+
+Las operaciones OP-1 a OP-4 son mayormente de lectura o tienen escrituras que no se encadenan (si una falla, la siguiente no depende de ella). Cada motor se accede en un bloque try/except independiente; los errores se acumulan sin detener el flujo:
+
+| \# Patrón best-effort (OP-1 a OP-4) |
 | :---- |
 | errores \= {} |
 |  |
@@ -566,6 +603,32 @@ Cada operación multi-motor ejecuta cada escritura en un bloque try/except indep
 |  |
 | response \= {..., 'errores': errores if errores else None} |
 
+**OP-5 — Saga Orquestada con transacciones compensatorias**
+
+OP-5 requiere una estrategia más fuerte porque combina un paso destructivo irreversible (ZPOPMAX consume la alerta del sorted set) con escrituras posteriores en MongoDB y Neo4j. Sin compensación, un fallo de MongoDB dejaría la alerta perdida sin dictamen.
+
+Se implementó el patrón **Saga Orquestada** (Richardson, 2018) en `api/saga.py`: un coordinador central ejecuta cada paso y registra su transacción compensatoria. Si cualquier paso falla, las compensaciones se ejecutan en orden inverso (LIFO):
+
+| \# Patrón Saga Orquestada (OP-5) |
+| :---- |
+| saga \= SagaOrchestrator() |
+|  |
+| try: |
+|     alerta \= consumir\_alerta\_maxima(r)          \# ZPOPMAX |
+|     saga.register(\_compensar\_restaurar\_alerta, alerta)  \# → ZADD |
+|  |
+|     dictamen \= \_mongo\_persistir\_dictamen(req)    \# insert\_one |
+|     saga.register(\_compensar\_borrar\_dictamen, dictamen) \# → delete\_one |
+|  |
+|     neo4j\_data \= \_neo4j\_crear\_interaccion(...)   \# MERGE |
+|     saga.register(\_compensar\_borrar\_interaccion, ...) \# → DELETE si nueva |
+|  |
+|     return response\_ok |
+|  |
+| except Exception as exc: |
+|     saga.compensate\_all()  \# revierte en orden inverso |
+|     return response\_error |
+
  
 
 ## **6.3 Orden de escritura y justificación**
@@ -583,7 +646,7 @@ Cada operación multi-motor ejecuta cada escritura en un bloque try/except indep
 | Garantía | ¿La ofrece? | Detalle |
 | ----- | ----- | ----- |
 | Atomicidad dentro de Redis | Sí | ZADD, INCR, LPUSH, ZPOPMAX son atómicos por diseño del motor. |
-| Atomicidad entre motores | No | No existe transacción distribuida. Una escritura puede completarse en Redis y fallar en MongoDB. |
+| Atomicidad entre motores | Parcial | OP-5 implementa Saga Orquestada: si un paso falla, las compensaciones revierten los pasos previos en orden inverso. OP-1 a OP-4 son best-effort sin compensación (sus escrituras no se encadenan). |
 | Consistencia eventual | Sí | Los errores quedan registrados en el campo errores del response. Un proceso de reconciliación periódico puede comparar contadores Redis con reportes MongoDB. |
 | Durabilidad en Redis | Parcial | Redis usa \--appendonly yes (AOF) en el docker-compose. Esto ofrece durabilidad ajustable con fsync each second por defecto. |
 | Lectura siempre consistente | No | Un panel de OP-1 puede mostrar un contador Redis ya expirado mientras el reporte en MongoDB aún existe. Trade-off aceptable para el caso de uso. |
@@ -680,6 +743,8 @@ En síntesis, la arquitectura políglota es la decisión correcta para este domi
 * **Redis Ltd. (s/f).** *Redis Commands Reference.* Recuperado de https://redis.io/commands/
 
 * **Pivert, O. (Ed.). (2018).** *NoSQL Data Models: Trends and Challenges.* ISTE. (Cap. 2\)
+
+* **Richardson, C. (2018).** *Microservices Patterns.* Manning. (Cap. Saga, CQRS, Database per Service)
 
  
 
