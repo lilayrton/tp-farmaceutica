@@ -5,10 +5,12 @@ Integra MongoDB + Neo4j + Redis en 5 operaciones de negocio.
 Ejecutar:
     PYTHONPATH=. uvicorn api.main:app --reload
 """
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from mongodb.connection import get_db
 from neo4j_db.connection import get_driver
@@ -60,6 +62,13 @@ app.include_router(op3_trazabilidad.router, tags=["OP-3 Trazabilidad"])
 app.include_router(op4_interacciones.router, tags=["OP-4 Interacciones"])
 app.include_router(op5_cierre_alerta.router, tags=["OP-5 Cierre de Alerta"])
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(current_dir, "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/dashboard", tags=["Dashboard"])
+def get_dashboard():
+    return FileResponse(os.path.join(static_dir, "index.html"))
 
 @app.get("/", tags=["Info"])
 def root():

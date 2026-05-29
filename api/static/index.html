@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Farmacovigilancia | TP Políglota</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Style -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-file-waveform"></i>
+                </div>
+                <div class="logo-text">
+                    <h2>FarmaVigilancia</h2>
+                    <span>Panel Políglota</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-tab="tab-panel">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Panel Principal</span>
+                </button>
+                <button class="nav-item" data-tab="tab-verify">
+                    <i class="fa-solid fa-prescription-bottle-medical"></i>
+                    <span>Verificar Receta</span>
+                </button>
+                <button class="nav-item" data-tab="tab-trace">
+                    <i class="fa-solid fa-truck-ramp-box"></i>
+                    <span>Trazabilidad y Frío</span>
+                </button>
+                <button class="nav-item" data-tab="tab-interactions">
+                    <i class="fa-solid fa-circle-nodes"></i>
+                    <span>Analizar Fármacos</span>
+                </button>
+                <button class="nav-item" data-tab="tab-close-alert">
+                    <i class="fa-solid fa-bell-slash"></i>
+                    <span>Gestionar Alertas</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <p>Ingeniería de Datos II</p>
+                <span>UADE - 2026</span>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-title">
+                    <h1 id="page-title">Panel de Farmacovigilancia</h1>
+                    <p id="page-subtitle">Consolidado operativo en tiempo real de múltiples bases de datos.</p>
+                </div>
+                
+                <!-- Connection Status Bar -->
+                <div class="status-bar">
+                    <div class="status-indicator mongo-status" id="status-mongo">
+                        <span class="status-dot"></span>
+                        <span>MongoDB</span>
+                    </div>
+                    <div class="status-indicator neo4j-status" id="status-neo4j">
+                        <span class="status-dot"></span>
+                        <span>Neo4j</span>
+                    </div>
+                    <div class="status-indicator redis-status" id="status-redis">
+                        <span class="status-dot"></span>
+                        <span>Redis</span>
+                    </div>
+                    <button class="btn-refresh" id="btn-refresh-panel" title="Actualizar datos">
+                        <i class="fa-solid fa-rotate"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- TAB: PANEL PRINCIPAL (OP-1) -->
+            <section class="tab-content active" id="tab-panel">
+                <!-- Metrics Grid -->
+                <div class="metrics-grid">
+                    <div class="metric-card bg-glow-blue">
+                        <div class="metric-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+                        <div class="metric-details">
+                            <span class="metric-label">En Cola de Evaluación (Redis)</span>
+                            <h3 class="metric-value" id="val-redis-cola">0</h3>
+                        </div>
+                    </div>
+                    <div class="metric-card bg-glow-red">
+                        <div class="metric-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div class="metric-details">
+                            <span class="metric-label">Alertas Activas (Redis)</span>
+                            <h3 class="metric-value" id="val-redis-alertas">0</h3>
+                        </div>
+                    </div>
+                    <div class="metric-card bg-glow-purple">
+                        <div class="metric-icon"><i class="fa-solid fa-dna"></i></div>
+                        <div class="metric-details">
+                            <span class="metric-label">Principios Activos en Grafo</span>
+                            <h3 class="metric-value">80</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <!-- Column 1: Redis Live Alertas -->
+                    <div class="grid-card col-span-2">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-bell text-red"></i> Alertas Activas de Farmacovigilancia <span class="badge badge-red">Redis ZSET</span></h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="custom-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID Alerta</th>
+                                            <th>Medicamento ID</th>
+                                            <th>Severidad</th>
+                                            <th>Tipo</th>
+                                            <th>Descripción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="redis-alertas-list">
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted">Cargando alertas...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Hot Counters (Redis) -->
+                    <div class="grid-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-fire text-orange"></i> Tráfico 24h Elevado <span class="badge badge-orange">Redis String</span></h2>
+                        </div>
+                        <div class="card-body">
+                            <ul class="simple-list" id="redis-counters-list">
+                                <li class="text-muted">Cargando reportes 24h...</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Column 3: MongoDB Most Reported -->
+                    <div class="grid-card col-span-2">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-file-medical-flag text-blue"></i> Más Reportados del Último Mes <span class="badge badge-blue">MongoDB Aggregation</span></h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="custom-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Medicamento</th>
+                                            <th>ID</th>
+                                            <th>Total Efectos Adversos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="mongo-reported-list">
+                                        <tr>
+                                            <td colspan="3" class="text-center text-muted">Cargando estadísticas...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Column 4: Neo4j Most Dangerous -->
+                    <div class="grid-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-skull-crossbones text-purple"></i> Principios Activos Críticos <span class="badge badge-purple">Neo4j Cypher</span></h2>
+                        </div>
+                        <div class="card-body">
+                            <ul class="simple-list" id="neo4j-dangerous-list">
+                                <li class="text-muted">Cargando relaciones de riesgo...</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: VERIFICAR RECETA (OP-2) -->
+            <section class="tab-content" id="tab-verify">
+                <div class="form-container">
+                    <div class="grid-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-prescription-bottle-medical text-primary"></i> Simular Prescripción y Evaluación de Riesgo</h2>
+                        </div>
+                        <div class="card-body">
+                            <p class="description-text">Esta operación simula una receta de farmacia. Verifica interacciones en el grafo de Neo4j para el paciente, alertas de lote en Redis e historial médico en MongoDB.</p>
+                            <form id="form-verify-prescription" class="custom-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="verify-paciente">ID Paciente Anonimizado</label>
+                                        <input type="text" id="verify-paciente" required placeholder="Ej: PAC-2024-00001 (o elige de la semilla)">
+                                        <small class="form-note">Semilla contiene PAC-2024-00001 hasta PAC-2024-00050</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="verify-medicamento">ID Medicamento (MongoDB ObjectId o Código)</label>
+                                        <input type="text" id="verify-medicamento" required placeholder="Ej: MED001 o ID de Mongo">
+                                        <small class="form-note">Semilla contiene códigos MED001 hasta MED200</small>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary" id="btn-submit-verify">
+                                    <i class="fa-solid fa-shield-heart"></i> Evaluar Prescripción
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Results Area (Initially Hidden) -->
+                    <div class="grid-card result-card hidden" id="verify-result-card">
+                        <div class="card-header" id="verify-result-header">
+                            <h2>Resultado del Análisis</h2>
+                        </div>
+                        <div class="card-body" id="verify-result-body">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: TRAZABILIDAD Y CADENA DE FRÍO (OP-3) -->
+            <section class="tab-content" id="tab-trace">
+                <div class="form-container">
+                    <div class="grid-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-truck-ramp-box text-primary"></i> Consulta de Lote y Monitoreo de Cadena de Frío</h2>
+                        </div>
+                        <div class="card-body">
+                            <p class="description-text">Consulta la procedencia e historial de un lote en MongoDB, y comprueba el sensor de temperatura en tiempo real almacenado en el Stream de Redis.</p>
+                            <form id="form-trace-lote" class="custom-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="trace-lote-num">Número de Lote (MongoDB)</label>
+                                        <input type="text" id="trace-lote-num" required placeholder="Ej: LOT-2024-0001">
+                                        <small class="form-note">Semilla contiene LOT-2024-0001 hasta LOT-2024-0150</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="trace-vehiculo">ID de Vehículo Refrigerado (Redis Stream)</label>
+                                        <input type="text" id="trace-vehiculo" required placeholder="Ej: VEH002 (tiene ruptura en semilla)">
+                                        <small class="form-note">VEH001 y VEH003 están estables. VEH002 simula ruptura.</small>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa-solid fa-route"></i> Obtener Historial y Temperatura
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Results -->
+                    <div class="grid-card result-card hidden" id="trace-result-card">
+                        <div class="card-header">
+                            <h2>Ficha de Trazabilidad y Temperatura</h2>
+                        </div>
+                        <div class="card-body" id="trace-result-body">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: ANALIZAR FÁRMACOS (OP-4) -->
+            <section class="tab-content" id="tab-interactions">
+                <div class="form-container">
+                    <div class="grid-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-circle-nodes text-primary"></i> Análisis de Principios Activos e Interacciones</h2>
+                        </div>
+                        <div class="card-body">
+                            <p class="description-text">Evalúa medicamentos en desarrollo o combinaciones de principios activos contra la base de datos de grafos (Neo4j) antes de su aprobación reguladora.</p>
+                            <form id="form-analyze-interactions" class="custom-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="interaction-med-id">Por ID de Medicamento Registrado</label>
+                                        <input type="text" id="interaction-med-id" placeholder="Ej: MED001 (Deja vacío si usarás principios manuales)">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="interaction-custom-pa">O por Principios Activos Manuales (Separados por coma)</label>
+                                        <input type="text" id="interaction-custom-pa" placeholder="Ej: Amoxicilina, Clavulanato, Ibuprofeno">
+                                        <small class="form-note">Ejemplos de la semilla: Paracetamol, Ibuprofeno, Warfarina, Amoxicilina, Ácido Clavulánico</small>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa-solid fa-microscope"></i> Analizar Compatibilidad
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Results -->
+                    <div class="grid-card result-card hidden" id="interactions-result-card">
+                        <div class="card-header">
+                            <h2>Reporte de Interacciones Farmacológicas</h2>
+                        </div>
+                        <div class="card-body" id="interactions-result-body">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: GESTIONAR ALERTAS (OP-5) -->
+            <section class="tab-content" id="tab-close-alert">
+                <div class="form-container">
+                    <div class="grid-card">
+                        <div class="card-header">
+                            <h2><i class="fa-solid fa-lock-open text-primary"></i> Resolución y Cierre de Alertas (Dictamen Médico)</h2>
+                        </div>
+                        <div class="card-body">
+                            <p class="description-text">Registra un dictamen médico sobre una alerta activa. Remueve la alerta de Redis, la guarda en MongoDB y, si se confirma una nueva interacción, actualiza el grafo de Neo4j en tiempo real.</p>
+                            <form id="form-close-alert" class="custom-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="close-alerta-id">ID Alerta (Redis)</label>
+                                        <input type="text" id="close-alerta-id" required placeholder="Ej: ALT-A1B2C3D4">
+                                        <small class="form-note">Obtén el ID del listado en el Panel Principal</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="close-med-id">ID Medicamento Involucrado</label>
+                                        <input type="text" id="close-med-id" required placeholder="Ej: MED001">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="close-investigador">ID Investigador / Evaluador</label>
+                                        <input type="text" id="close-investigador" required placeholder="Ej: INV-7729">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="close-resultado">Dictamen del Caso</label>
+                                        <select id="close-resultado" required>
+                                            <option value="">Seleccione dictamen...</option>
+                                            <option value="confirmado">Confirmado (Riesgo real detectado)</option>
+                                            <option value="falso_positivo">Falso Positivo (Se descontará de Redis)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="close-acciones">Acciones Tomadas y Observaciones</label>
+                                    <textarea id="close-acciones" rows="3" placeholder="Describe los pasos tomados (Ej: Suspensión de lote, advertencia a ANMAT, etc.)" required></textarea>
+                                </div>
+
+                                <!-- Collapsible Section for New Interaction (Only visible if Confirmed) -->
+                                <div class="neo4j-interaction-addition hidden" id="neo4j-interaction-group">
+                                    <div class="sub-header">
+                                        <h3><i class="fa-solid fa-code-merge text-purple"></i> Registrar nueva interacción en el Grafo (Neo4j)</h3>
+                                        <p>Completa esto si el dictamen médico descubrió una nueva interacción de principios activos no mapeada previamente.</p>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="new-pa1">Principio Activo 1</label>
+                                            <input type="text" id="new-pa1" placeholder="Ej: Warfarina">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="new-pa2">Principio Activo 2</label>
+                                            <input type="text" id="new-pa2" placeholder="Ej: Ibuprofeno">
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="new-tipo">Tipo de Interacción</label>
+                                            <input type="text" id="new-tipo" placeholder="Ej: farmacodinamica / farmacocinetica">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="new-severidad">Severidad</label>
+                                            <select id="new-severidad">
+                                                <option value="leve">Leve</option>
+                                                <option value="moderada">Moderada</option>
+                                                <option value="grave">Grave</option>
+                                                <option value="contraindicada">Contraindicada</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="new-mecanismo">Mecanismo / Descripción del efecto</label>
+                                        <input type="text" id="new-mecanismo" placeholder="Ej: Aumenta riesgo de sangrado gástrico por sinergia">
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-purple">
+                                    <i class="fa-solid fa-circle-check"></i> Emitir Dictamen y Cerrar Alerta
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Results -->
+                    <div class="grid-card result-card hidden" id="close-result-card">
+                        <div class="card-header">
+                            <h2>Resultado del Cierre</h2>
+                        </div>
+                        <div class="card-body" id="close-result-body">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <!-- Custom script logic -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
