@@ -251,9 +251,11 @@ El proyecto sigue una arquitectura en capas con separación clara entre acceso a
 
 Se eligió la modalidad de API REST con FastAPI porque cumple los requisitos de la consigna.
 
-* Las operaciones son invocables sin modificar el código: cada endpoint es accesible via HTTP desde el dashboard web.  
+* Las operaciones son invocables sin modificar el código: cada endpoint es accesible via HTTP desde Swagger o desde el dashboard web en /dashboard.  
 * Errores descriptivos: cada router envuelve las llamadas a cada motor en bloques try/except independientes. Los errores se agregan al campo errores: {} de la respuesta JSON sin interrumpir los demás motores.  
 * Verificación de conectividad al arrancar: el lifespan de FastAPI en [main.py](http://main.py) hace ping a los tres motores al iniciar y reporta en consola cuáles están disponibles.
+
+Adicionalmente, el proyecto incluye un dashboard web interactivo disponible en /dashboard que expone las 5 operaciones en una interfaz visual con formularios, indicadores de estado en tiempo real de los tres motores y visualización de resultados. Permite ejecutar y probar todas las operaciones sin necesidad de un cliente HTTP externo ni conocer la estructura de los endpoints.
 
 ## Infraestructura {#infraestructura}
 
@@ -329,7 +331,7 @@ Request: { paciente_id, medicamento_id }
      Si hay_grave: publicar_alerta() → ZADD con severidad=5, tipo=interaccion_grave
      │
      ▼
-  JSON: { interacciones, alertas_activas, historial_efectos_adversos_grupo,
+  JSON: { interacciones, alertas_activas, historial_efectos_adversos_grupo_farmacologico,
           riesgo_alto: (hay_grave OR len(alertas)>0), errores: {} }
 ```
 
@@ -459,7 +461,7 @@ El equipo de farmacovigilancia necesita una vista unificada del estado de riesgo
 
 Endpoint: POST /prescripcion/verificar
 
-Request body: {"paciente\_id": "PAC-2024-00001", "medicamento\_id": "\<ObjectId\>"}
+Request body: {"paciente\_id": "PAC-2026-12035", "medicamento\_id": "MED001"}
 
 ### Flujo de consultas implementado: {#flujo-de-consultas-implementado:-1}
 
@@ -489,8 +491,7 @@ Endpoint: GET /lote/{numero\_lote}/trazabilidad?vehiculo\_id=VEH001
 ### Flujo de consultas implementado: {#flujo-de-consultas-implementado:-2}
 
 1. **Redis**  
-   obtener\_ultimas\_lecturas(vehiculo\_id, n=2) usa XREVRANGE temperatura:stream con count=nx5 para filtrar por vehiculo\_id hasta encontrar las 2 más recientes.  
-   detectar\_ruptura\_cadena\_frio() verifica si ambas están fuera del rango \[2°C, 8°C\]. Si ruptura=True, llama a publicar\_alerta() con severidad=5 y tipo=lote\_comprometido.  
+   obtener\_ultimas\_lecturas(vehiculo\_id, n=12) usa XREVRANGE temperatura:stream con count=60 para filtrar por vehiculo\_id y recuperar hasta 12 lecturas recientes del vehículo. detectar\_ruptura\_cadena\_frio() toma las 2 más recientes de ese conjunto y verifica si ambas están fuera del rango \[2°C, 8°C\]. Este diseño garantiza encontrar 2 lecturas del vehículo aunque el STREAM global tenga entradas intercaladas de otros vehículos. Si ruptura=True, llama a publicar\_alerta() con severidad=5 y tipo=lote\_comprometido.  
    consultar\_tendencia() devuelve las últimas 12 lecturas para análisis visual.  
 2. **MongoDB**  
    trazabilidad\_lote() ejecuta el pipeline de $match por numero\_lote (usa índice único idx\_lotes\_numero, O(1)) \+ $project con cadena\_distribucion embebida.  
