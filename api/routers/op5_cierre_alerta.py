@@ -1,7 +1,7 @@
 """
 OP-5 — Cierre de alerta de farmacovigilancia (3 motores)
 
-Redis   → elimina la alerta del SORTED SET; DECR del contador si es falso positivo
+Redis   → consume la alerta de mayor score con ZPOPMAX. DECR del contador si es falso positivo
 MongoDB → persiste el dictamen completo (resolución + acciones + investigador)
 Neo4j   → si se confirma nueva interacción, crea/actualiza la relación INTERACTUA_CON
 """
@@ -13,7 +13,7 @@ from bson import ObjectId
 from mongodb.connection import get_db
 from neo4j_db.connection import get_driver
 from redis_db.connection import get_redis
-from redis_db.queries.a_alertas_farmacovigilancia import eliminar_alerta
+from redis_db.queries.a_alertas_farmacovigilancia import consumir_alerta_maxima
 from api.models import CerrarAlertaRequest
 
 router = APIRouter()
@@ -65,7 +65,7 @@ def cerrar_alerta(req: CerrarAlertaRequest):
     """
     **OP-5** — El médico evaluador resuelve una alerta y el sistema actualiza los tres motores:
 
-    1. **Redis** — elimina la alerta del SORTED SET. Si el resultado es `falso_positivo`,
+    1. **Redis** — consume la alerta de mayor score (ZPOPMAX). Si el resultado es `falso_positivo`,
        decrementa el contador del medicamento en las últimas 24h.
     2. **MongoDB** — persiste el dictamen completo (resolución, acciones tomadas, investigador).
     3. **Neo4j** — si se confirma una nueva interacción (`resultado == "confirmado"` y se
@@ -79,11 +79,11 @@ def cerrar_alerta(req: CerrarAlertaRequest):
     mongo_data = {}
     neo4j_data = {}
 
-    # 1. Redis — eliminar alerta y opcionalmente decrementar contador
+    # 1. Redis — consumir alerta por ZPOPMAX y opcionalmente decrementar contador
     try:
         r = get_redis()
-        eliminada = eliminar_alerta(r, req.alerta_id)
-        redis_data["alerta_eliminada"] = eliminada
+        alerta_consumida = consumir_alerta_maxima(r)
+        redis_data["alerta_consumida"] = alerta_consumida
 
         if req.resultado == "falso_positivo":
             from redis_db.queries.c_control_acceso import _contador_key
