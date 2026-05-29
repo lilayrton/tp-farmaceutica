@@ -200,6 +200,36 @@ Se desarrolló un módulo seed/generador\_redis.py para poblar las cinco estruct
 | HASH+TTL | 4 accesos | Un investigador, un auditor y dos roles variados. TTL según rol. |
 | STRING+EXPIRE | 4 contadores | MED001 con conteo=8 y MED003 con conteo=6, ambos sobre el umbral=5 para activar alertas en OP-1. |
 
+## Consultas Redis standalone: código y ejecución {#consultas-redis-standalone}
+
+Esta subsección documenta los tres módulos Redis implementados en `redis_db/queries/`. Cada uno corresponde a una operación requerida en la consigna: sistema de alertas, cadena de frío, y control de acceso a ensayos clínicos y cola de evaluación.
+
+### Sistema de alertas de farmacovigilancia
+
+> **[CÓDIGO — a_alertas_farmacovigilancia.py]** Insertar aquí el contenido completo del módulo `redis_db/queries/a_alertas_farmacovigilancia.py`. Funciones a incluir: `publicar_alerta()`, `listar_alertas_activas()`, `consumir_alerta_maxima()`, `escalar_alerta()`, `eliminar_alerta()`. Mostrar también la constante `URGENCIA_POR_TIPO` y la función auxiliar de cálculo del score compuesto.
+
+> **[SCREENSHOT — alertas farmacovigilancia]** Captura del output al ejecutar el módulo directamente (`PYTHONPATH=. python redis_db/queries/a_alertas_farmacovigilancia.py`). La captura debe mostrar: publicación de al menos 3 alertas con tipos y severidades distintos (incluyendo `interaccion_grave` con score 15.0), listado `ZREVRANGE` con todas las alertas ordenadas por score descendente, y consumo de la alerta de mayor score con `ZPOPMAX`.
+> *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
+
+### Monitoreo de cadena de frío
+
+> **[CÓDIGO — b_cadena_frio.py]** Insertar aquí el contenido completo del módulo `redis_db/queries/b_cadena_frio.py`. Funciones a incluir: `registrar_lectura()`, `obtener_ultimas_lecturas()`, `detectar_ruptura_cadena_frio()`, `consultar_tendencia()`. Mostrar también las constantes `TEMP_MIN`, `TEMP_MAX` y el rango de seguridad `[2°C, 8°C]`.
+
+> **[SCREENSHOT — cadena de frío]** Captura del output al ejecutar el módulo (`PYTHONPATH=. python redis_db/queries/b_cadena_frio.py`). La captura debe mostrar: `XADD` de lecturas de temperatura para VEH001, VEH002 y VEH003, detección de ruptura en VEH002 (las dos últimas lecturas fuera del rango `[2, 8]°C` garantizadas por el seed), y la alerta publicada automáticamente con `tipo=lote_comprometido` y `severidad=5`.
+> *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
+
+### Control de acceso a ensayos clínicos y cola de evaluación
+
+> **[CÓDIGO — c_control_acceso.py — HASH+TTL]** Insertar aquí las funciones de control de acceso del módulo `redis_db/queries/c_control_acceso.py`: `otorgar_acceso()` y `verificar_acceso()`. Mostrar también la constante `TTL_POR_ROL` con los tres valores (investigador: 28800 s, auditor: 14400 s, regulador: 86400 s).
+
+> **[SCREENSHOT — control de acceso]** Captura del output al ejecutar las funciones de control de acceso. La captura debe mostrar: `HSET` + `EXPIRE` al otorgar acceso a un investigador (TTL=28800 s), `HGETALL` con todos los campos del hash (investigador_id, rol, institución, permisos, timestamp), y `TTL` con los segundos restantes según el rol asignado.
+> *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
+
+> **[CÓDIGO — c_control_acceso.py — LIST]** Insertar aquí las funciones de cola del módulo `redis_db/queries/c_control_acceso.py`: `encolar_reporte()`, `tomar_reporte()` y `tamanio_cola()`. Incluir también `incrementar_contador_y_alertar()` y `obtener_contadores_elevados()` para completar el tratamiento del contador STRING+EXPIRE.
+
+> **[SCREENSHOT — cola de evaluación]** Captura del output al ejecutar las funciones de cola. La captura debe mostrar: `LPUSH` de al menos 2 reportes con gravedades distintas (`leve`, `moderada`, `grave`), `LLEN` con el tamaño actual de la cola, y `RPOP` del primer reporte en entrar (orden FIFO verificado: el reporte más antiguo sale primero).
+> *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
+
 # Diseño de la Capa Políglota. {#diseño-de-la-capa-políglota.}
 
 ## Tabla de responsabilidades por motor. {#tabla-de-responsabilidades-por-motor.}
@@ -449,6 +479,14 @@ El equipo de farmacovigilancia necesita una vista unificada del estado de riesgo
 4. **Resultado**  
    El endpoint agrega los tres resultado en un único objeto JSON con claves redis, mongodb, neo4j y un campo opcional de errores por si algún motor no respondió.
 
+> **[SCREENSHOT — OP-1]** `GET http://localhost:8000/panel` — sin parámetros.
+> La captura debe mostrar el JSON de respuesta completo (Swagger UI o `/dashboard`). Verificar que estén presentes:
+> - `redis.alertas`: al menos 5 entradas, con MED001 a severidad 5 visible en el top.
+> - `redis.contadores`: MED001=8 y MED003=6 (ambos superan el umbral=5).
+> - `mongodb.medicamentos`: los 10 medicamentos con más reportes del último mes.
+> - `neo4j.principios_activos`: los 5 PA con mayor cantidad de interacciones graves.
+> *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
+
 | Motor | Dato consultado |
 | ----- | ----- |
 | Redis | Top 5 alertas \+ tamaño cola \+ contadores \> umbral |
@@ -478,6 +516,15 @@ Request body: {"paciente\_id": "PAC-2026-12035", "medicamento\_id": "MED001"}
    Si Neo4j detectó alguna interacción con severidad ‘grave’ o ‘contraindicada’, publicar\_alerta() hace ZADD con severidad=5, tipo=interaccion\_grave y descripción contextualizada con paciente\_id y medicamento\_id.  
    
 
+> **[SCREENSHOT — OP-2]** `POST http://localhost:8000/prescripcion/verificar`
+> Body: `{"paciente_id": "PAC-2026-12035", "medicamento_id": "MED001"}`
+> La captura debe mostrar el JSON con:
+> - `riesgo_alto: true` visible en primer plano.
+> - `interacciones`: al menos una entrada de severidad `"grave"` o `"contraindicada"`.
+> - `alertas_activas`: alerta de MED001 con score=15.0 y tipo=`interaccion_grave`.
+> - `historial_efectos_adversos_grupo_farmacologico`: reportes de los últimos 6 meses del grupo farmacológico.
+> *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
+
 El orden de las consultas es fundamental: el paso previo MongoDB obtiene los PAs del medicamento nuevo, que son el input de Neo4j. Neo4j se ejecuta antes que Redis porque su resultado condiciona la escritura en Redis. MongoDB (historial) se consulta al final porque su resultado no condiciona ninguna escritura, solo enriquece la respuesta.
 
 **Si los tres motores detectan riesgo simultáneamente:** no hay contradicción entre los motores, sino acumulación de evidencia. Neo4j confirma una interacción directa entre los PAs del nuevo medicamento y los del paciente (conocimiento estructural del grafo), Redis informa que ya hay una alerta activa sobre ese medicamento (estado operativo en tiempo real) y MongoDB muestra antecedentes del grupo farmacológico al que pertenece el medicamento (evidencia poblacional de efectos adversos en medicamentos similares). En este caso el sistema: (a) devuelve `riesgo_alto: true`; (b) publica la nueva alerta en el SORTED SET con severidad máxima; (c) incluye los tres bloques de evidencia en la respuesta JSON bajo las claves `interacciones`, `alertas_activas` y `historial_efectos_adversos_grupo_farmacologico`.
@@ -497,6 +544,14 @@ Endpoint: GET /lote/{numero\_lote}/trazabilidad?vehiculo\_id=VEH001
    trazabilidad\_lote() ejecuta el pipeline de $match por numero\_lote (usa índice único idx\_lotes\_numero, O(1)) \+ $project con cadena\_distribucion embebida.  
    Devuelve el historial completo desde planta hasta el último punto de dispensación sin JOINs.  
    
+
+> **[SCREENSHOT — OP-3]** `GET http://localhost:8000/lote/LOT-0001/trazabilidad?vehiculo_id=VEH002`
+> *(Reemplazar `LOT-0001` por cualquier número de lote válido del seed. VEH002 tiene ruptura de cadena de frío garantizada por el generador de datos.)*
+> La captura debe mostrar el JSON con:
+> - `ruptura_detectada: true` y `alerta_publicada: true` (tipo=`lote_comprometido`).
+> - `tendencia_temperatura`: al menos 2 lecturas fuera del rango [2, 8]°C.
+> - `trazabilidad_lote.cadena_distribucion`: historial completo desde planta hasta dispensación.
+> *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
 
 ### ¿Por qué no usamos Neo4j? {#¿por-qué-no-usamos-neo4j?}
 
@@ -518,6 +573,13 @@ También acepta: GET /medicamento/nuevo/interacciones?principios\_activos=Amoxic
    
 
 La respuesta incluye resumen\_por\_severidad que agrupa la cantidad de interacciones detectadas por nivel (contraindicada, grave, moderada, leve), facilitando la evaluación regulatoria.
+
+> **[SCREENSHOT — OP-4]** `GET http://localhost:8000/medicamento/MED001/interacciones`
+> *(Alternativamente, usar el endpoint con PAs explícitos: `GET /medicamento/nuevo/interacciones?principios_activos=Amoxicilina&principios_activos=Clavulanato`)*
+> La captura debe mostrar el JSON con:
+> - `resumen_por_severidad`: conteo por nivel (contraindicada, grave, moderada, leve).
+> - `interacciones`: al menos 2 entradas con severidades distintas, cada una con `tipo`, `mecanismo` y los medicamentos que comparten ese PA.
+> *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
 
 ### ¿Por qué no usamos Redis? {#¿por-qué-no-usamos-redis?}
 
@@ -551,6 +613,31 @@ Endpoint: POST /alerta/cerrar
       Señal de farmacovigilancia corregida:  
       DECR contador:efectos:{med\_id} \+ max(0, valor) para evitar negativos  
       
+
+> **[SCREENSHOT — OP-5]** `POST http://localhost:8000/alerta/cerrar`
+> Body sugerido (resultado confirmado con nueva interacción para ejercitar los 3 motores y el flujo Saga completo):
+> ```json
+> {
+>   "alerta_id": "alerta-001",
+>   "medicamento_id": "MED001",
+>   "resultado": "confirmado",
+>   "investigador_id": "INV-001",
+>   "acciones_tomadas": "Se suspendió la prescripción y se notificó al médico tratante.",
+>   "nueva_interaccion": {
+>     "pa1": "Warfarina",
+>     "pa2": "Aspirina",
+>     "tipo": "farmacocinetica",
+>     "severidad": "grave",
+>     "mecanismo": "Inhibición competitiva del metabolismo hepático por CYP2C9"
+>   }
+> }
+> ```
+> La captura debe mostrar el JSON con:
+> - `redis.consumida: true` (ZPOPMAX ejecutado correctamente).
+> - `mongodb.dictamen_id`: ObjectId del dictamen persistido.
+> - `neo4j.interaccion_creada: true` (relación MERGE ejecutada).
+> - Ausencia del campo `saga` en la respuesta (sin compensación = flujo exitoso).
+> *(Opcional: tomar una segunda captura con `"resultado": "falso_positivo"` para mostrar el `DECR` del contador en Redis. Reemplazar este bloque por la(s) imagen(es) real(es) y un caption breve.)*
 
 El request body acepta un campo opcional nueva\_interaccion con pa1, pa2, tipo, severidad y mecanismo. Si resultado='confirmado' y este campo está presente, Neo4j ejecuta el MERGE con ON CREATE/ON MATCH para crear o actualizar la relación. Si resultado es 'falso\_positivo', Neo4j queda omitido y se registra el motivo en la respuesta.
 

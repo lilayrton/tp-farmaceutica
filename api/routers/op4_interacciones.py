@@ -64,8 +64,8 @@ def analisis_interacciones(
       todas las combinaciones conocidas con medicamentos existentes, ordenadas por severidad.
 
     **¿Por qué Redis no participa?**
-    Es un análisis regulatorio sobre un medicamento en desarrollo — no hay datos
-    operativos en tiempo real que consultar. El medicamento no está en el mercado,
+    Es un análisis regulatorio sobre un medicamento en desarrollo no hay datos
+    operativos en tiempo real para consultar. El medicamento no está en el mercado,
     por lo tanto no tiene alertas activas ni contadores en Redis.
 
     Podés pasar los nombres de principios activos directamente con el query param
@@ -77,7 +77,7 @@ def analisis_interacciones(
     neo4j_data = {}
     nombres_pa = principios_activos  # puede venir directo del query param
 
-    # 1. MongoDB — datos del medicamento y sus principios activos
+    # 1. MongoDB - datos del medicamento y sus principios activos
     try:
         if medicamento_id and medicamento_id != "nuevo":
             mongo_data = _mongo_principios_activos(medicamento_id)
@@ -88,7 +88,7 @@ def analisis_interacciones(
     except Exception as e:
         errores["mongodb"] = str(e)
 
-    # 2. Neo4j — predicción de interacciones
+    # 2. Neo4j - predicción de interacciones
     try:
         if nombres_pa:
             interacciones = prediccion_interacciones(nombres_pa)
