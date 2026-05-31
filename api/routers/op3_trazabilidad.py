@@ -52,12 +52,21 @@ def trazabilidad_y_cadena_frio(
         r = get_redis()
         ruptura = detectar_ruptura_cadena_frio(r, vehiculo_id)
         tendencia = consultar_tendencia(r, vehiculo_id)
+        
+        # Adaptar tendencia para compatibilidad con el frontend app.js (busca 'temperatura')
+        compat_tendencia = []
+        for t in tendencia:
+            compat_tendencia.append({
+                **t,
+                "temperatura": t.get("temperatura_celsius")
+            })
+
         redis_data = {
             "vehiculo_id": vehiculo_id,
             "ruptura_detectada": ruptura["ruptura_detectada"],
             "mensaje": ruptura.get("mensaje", "Sin rupturas detectadas"),
             "alerta_publicada": ruptura.get("alerta_publicada"),
-            "tendencia_ultimas_12_lecturas": tendencia,
+            "tendencia_ultimas_12_lecturas": compat_tendencia,
         }
     except Exception as e:
         errores["redis"] = str(e)
@@ -70,7 +79,42 @@ def trazabilidad_y_cadena_frio(
         else:
             from bson import json_util
             import json
-            mongo_data = json.loads(json_util.dumps(resultado))
+            raw_mongo_data = json.loads(json_util.dumps(resultado))
+            
+            # Mapear datos al formato compatible que espera app.js
+            historial = raw_mongo_data.get("historial_trazabilidad", [])
+            distribucion = []
+            custodia_actual = None
+            
+            if len(historial) >= 1:
+                # El último eslabón es la custodia actual
+                last_step = historial[-1]
+                custodia_actual = {
+                    "entidad": last_step.get("entidad_nombre"),
+                    "ubicacion": f"Ubicación: {last_step.get('etapa').title()}"
+                }
+                
+                # Los eslabones intermedios son los distribuidores
+                for step in historial[1:-1]:
+                    distribucion.append({
+                        "distribuidor_id": step.get("entidad_nombre"),
+                        "fecha_despacho": step.get("fecha")
+                    })
+            
+            mongo_data = {
+                # Campos esperados por app.js:
+                "numero_lote": raw_mongo_data.get("lote"),
+                "medicamento_id": raw_mongo_data.get("producto_id"),
+                "fecha_fabricacion": raw_mongo_data.get("fecha_fabricacion"),
+                "fecha_vencimiento": raw_mongo_data.get("fecha_vencimiento"),
+                "distribucion": distribucion,
+                "custodia_actual": custodia_actual,
+                # Campos originales proyectados por la consulta:
+                "lote": raw_mongo_data.get("lote"),
+                "producto_id": raw_mongo_data.get("producto_id"),
+                "planta_origen": raw_mongo_data.get("planta_origen"),
+                "historial_trazabilidad": historial
+            }
     except Exception as e:
         errores["mongodb"] = str(e)
 
