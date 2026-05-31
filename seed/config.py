@@ -32,12 +32,13 @@ PACIENTES_CON_INTERACCION = 10  # pacientes neo4j con combinaciones peligrosas (
 PA_CONTRAINDICADOS_MIN    = 20  # pares INTERACTUA_CON severidad grave/contraindicada
 
 # ── Conexiones (ajustar a tu entorno) ────────────────────────────────────────
-MONGO_URI  = "mongodb://localhost:27017"
-MONGO_DB   = "farmaceutica_tp"
+import os
+MONGO_URI  = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_DB   = os.getenv("MONGO_DB", "farmaceutica_tp")
 
-NEO4J_URI  = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASS = "farmaceutica"
+NEO4J_URI  = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_PASS = os.getenv("NEO4J_PASSWORD", "farmaceutica")
 
 # ── Países del sistema ───────────────────────────────────────────────────────
 PAISES = ["AR", "BR", "UY", "CL", "MX", "CO", "PE", "PY", "BO", "EC"]

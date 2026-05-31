@@ -22,7 +22,7 @@
                     <i class="fa-solid fa-file-waveform"></i>
                 </div>
                 <div class="logo-text">
-                    <h2>FarmaVigilancia</h2>
+                    <h2>FarmaShield</h2>
                     <span>Panel Políglota</span>
                 </div>
             </div>
@@ -204,13 +204,13 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="verify-paciente">ID Paciente Anonimizado</label>
-                                        <input type="text" id="verify-paciente" required placeholder="Ej: PAC-2026-12035">
-                                        <small class="form-note">Semilla contiene IDs del tipo PAC-2026-XXXXX (ej: PAC-2026-12035, PAC-2026-59074)</small>
+                                        <input type="text" id="verify-paciente" data-list="datalist-pacientes" autocomplete="off" required placeholder="Ej: PAC-2026-12035 (o elige de la lista)">
+                                        <small class="form-note">Semilla contiene pacientes como PAC-2026-12035, PAC-2026-59074, etc.</small>
                                     </div>
                                     <div class="form-group">
                                         <label for="verify-medicamento">ID Medicamento (MongoDB ObjectId o Código)</label>
-                                        <input type="text" id="verify-medicamento" required placeholder="Ej: MED001 o ID de Mongo">
-                                        <small class="form-note">Semilla contiene códigos MED001 hasta MED200</small>
+                                        <input type="text" id="verify-medicamento" data-list="datalist-meds-short" autocomplete="off" required placeholder="Ej: MED001 o ID de Mongo">
+                                        <small class="form-note">Semilla contiene códigos MED001 hasta MED008</small>
                                     </div>
                                 </div>
                                 <button type="submit" class="btn btn-primary" id="btn-submit-verify">
@@ -245,12 +245,12 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="trace-lote-num">Número de Lote (MongoDB)</label>
-                                        <input type="text" id="trace-lote-num" required placeholder="Ej: LOT-2026-00001">
-                                        <small class="form-note">Semilla contiene LOT-2026-00001 hasta LOT-2026-00150</small>
+                                        <input type="text" id="trace-lote-num" data-list="datalist-lotes" autocomplete="off" required placeholder="Ej: LOT-2026-00001 (o elige de la lista)">
+                                        <small class="form-note">Semilla contiene lotes como LOT-2026-00001 hasta LOT-2026-00150</small>
                                     </div>
                                     <div class="form-group">
                                         <label for="trace-vehiculo">ID de Vehículo Refrigerado (Redis Stream)</label>
-                                        <input type="text" id="trace-vehiculo" required placeholder="Ej: VEH002 (tiene ruptura en semilla)">
+                                        <input type="text" id="trace-vehiculo" data-list="datalist-vehiculos" autocomplete="off" required placeholder="Ej: VEH002 (tiene ruptura en semilla)">
                                         <small class="form-note">VEH001 y VEH003 están estables. VEH002 simula ruptura.</small>
                                     </div>
                                 </div>
@@ -286,12 +286,12 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="interaction-med-id">Por ID de Medicamento Registrado</label>
-                                        <input type="text" id="interaction-med-id" placeholder="Ej: MED001 (Deja vacío si usarás principios manuales)">
+                                        <input type="text" id="interaction-med-id" data-list="datalist-meds-mongo" autocomplete="off" placeholder="Ej: 6a1c9e51f5bfac7332629225 (o elige de la lista)">
                                     </div>
                                     <div class="form-group">
                                         <label for="interaction-custom-pa">O por Principios Activos Manuales (Separados por coma)</label>
                                         <input type="text" id="interaction-custom-pa" placeholder="Ej: Amoxicilina, Clavulanato, Ibuprofeno">
-                                        <small class="form-note">Ejemplos de la semilla: Ibuprofeno, Warfarina, Amoxicilina, Clavulanato, Fluoxetina</small>
+                                        <small class="form-note">Ejemplos de la semilla: Paracetamol, Ibuprofeno, Warfarina, Amoxicilina, Fluoxetina</small>
                                     </div>
                                 </div>
                                 <button type="submit" class="btn btn-primary">
@@ -326,12 +326,12 @@
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="close-alerta-id">ID Alerta (Redis)</label>
-                                        <input type="text" id="close-alerta-id" required placeholder="Ej: ALT-A1B2C3D4">
+                                        <input type="text" id="close-alerta-id" required placeholder="Ej: ALT-E5692FDA">
                                         <small class="form-note">Obtén el ID del listado en el Panel Principal</small>
                                     </div>
                                     <div class="form-group">
                                         <label for="close-med-id">ID Medicamento Involucrado</label>
-                                        <input type="text" id="close-med-id" required placeholder="Ej: MED001">
+                                        <input type="text" id="close-med-id" data-list="datalist-meds-short" autocomplete="off" required placeholder="Ej: MED001">
                                     </div>
                                 </div>
                                 <div class="form-row">
@@ -410,6 +410,48 @@
             </section>
         </main>
     </div>
+    <!-- Datalists for Autocomplete / Suggestions -->
+    <datalist id="datalist-pacientes">
+        <option value="PAC-2026-12035"></option>
+        <option value="PAC-2026-59074"></option>
+        <option value="PAC-2026-53920"></option>
+        <option value="PAC-2026-41697"></option>
+        <option value="PAC-2026-90775"></option>
+    </datalist>
+
+    <datalist id="datalist-meds-short">
+        <option value="MED001"></option>
+        <option value="MED002"></option>
+        <option value="MED003"></option>
+        <option value="MED004"></option>
+        <option value="MED005"></option>
+        <option value="MED006"></option>
+        <option value="MED007"></option>
+        <option value="MED008"></option>
+    </datalist>
+
+    <datalist id="datalist-meds-mongo">
+        <option value="6a1c9e51f5bfac7332629225">Rodriguez 750 (Fluoxetina)</option>
+        <option value="6a1c9e51f5bfac7332629226">Gomez 500 (Ramipril)</option>
+        <option value="6a1c9e51f5bfac7332629227">Godoy 750 (Ibuprofeno)</option>
+        <option value="6a1c9e51f5bfac7332629228">Torres 200 (Metotrexato)</option>
+        <option value="6a1c9e51f5bfac7332629229">Perez 500 (Azitromicina)</option>
+    </datalist>
+
+    <datalist id="datalist-lotes">
+        <option value="LOT-2026-00001"></option>
+        <option value="LOT-2026-00002"></option>
+        <option value="LOT-2026-00003"></option>
+        <option value="LOT-2026-00004"></option>
+        <option value="LOT-2026-00005"></option>
+    </datalist>
+
+    <datalist id="datalist-vehiculos">
+        <option value="VEH001">Temperatura Estable</option>
+        <option value="VEH002">Ruptura de Cadena de Frío</option>
+        <option value="VEH003">Temperatura Estable</option>
+    </datalist>
+
     <!-- Custom script logic -->
     <script src="/static/app.js"></script>
 </body>

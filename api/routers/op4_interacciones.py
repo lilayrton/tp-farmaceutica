@@ -21,21 +21,30 @@ def _mongo_principios_activos(medicamento_id: str) -> dict:
     db = get_db()
     try:
         med_oid = ObjectId(medicamento_id)
-        med = db.medicamentos.find_one({"_id": med_oid})
     except Exception:
-        med = db.medicamentos.find_one({"codigo": medicamento_id})
+        return {"error": f"ID de medicamento inválido: {medicamento_id}"}
 
+    med = db.medicamentos.find_one({"_id": med_oid})
     if not med:
         return {"error": f"Medicamento '{medicamento_id}' no encontrado"}
 
     pa_ids = med.get("principios_activos", [])
     nombres_pa = []
     for pa_ref in pa_ids:
-        pa_id = pa_ref.get("pa_id") if isinstance(pa_ref, dict) else pa_ref
-        if pa_id:
+        nombre = None
+        if isinstance(pa_ref, dict):
+            nombre = pa_ref.get("nombre")
+            pa_id = pa_ref.get("pa_id") or pa_ref.get("id")
+        else:
+            pa_id = pa_ref
+        
+        if not nombre and pa_id:
             pa_doc = db.principios_activos.find_one({"_id": ObjectId(str(pa_id))})
             if pa_doc:
-                nombres_pa.append(pa_doc["nombre"])
+                nombre = pa_doc.get("nombre")
+        
+        if nombre:
+            nombres_pa.append(nombre)
 
     return {
         "medicamento_id": medicamento_id,
@@ -64,8 +73,8 @@ def analisis_interacciones(
       todas las combinaciones conocidas con medicamentos existentes, ordenadas por severidad.
 
     **¿Por qué Redis no participa?**
-    Es un análisis regulatorio sobre un medicamento en desarrollo no hay datos
-    operativos en tiempo real para consultar. El medicamento no está en el mercado,
+    Es un análisis regulatorio sobre un medicamento en desarrollo — no hay datos
+    operativos en tiempo real que consultar. El medicamento no está en el mercado,
     por lo tanto no tiene alertas activas ni contadores en Redis.
 
     Podés pasar los nombres de principios activos directamente con el query param
@@ -77,7 +86,7 @@ def analisis_interacciones(
     neo4j_data = {}
     nombres_pa = principios_activos  # puede venir directo del query param
 
-    # 1. MongoDB - datos del medicamento y sus principios activos
+    # 1. MongoDB — datos del medicamento y sus principios activos
     try:
         if medicamento_id and medicamento_id != "nuevo":
             mongo_data = _mongo_principios_activos(medicamento_id)
@@ -88,16 +97,31 @@ def analisis_interacciones(
     except Exception as e:
         errores["mongodb"] = str(e)
 
-    # 2. Neo4j - predicción de interacciones
+    # 2. Neo4j — predicción de interacciones
     try:
         if nombres_pa:
             interacciones = prediccion_interacciones(nombres_pa)
+            
+            # Formatear interacciones para que el frontend reciba las llaves que espera
+            nombre_med_propio = mongo_data.get("nombre_comercial") or "Nuevo Fármaco"
+            interacciones_formateadas = []
+            for i in interacciones:
+                meds_afectados = i.get("medicamentos_afectados", [])
+                med_2_str = ", ".join(meds_afectados) if meds_afectados else "N/D"
+                
+                i_copy = dict(i)
+                i_copy["principio_activo_1"] = i.get("pa_propio")
+                i_copy["principio_activo_2"] = i.get("pa_en_conflicto")
+                i_copy["med_1_nombre"] = nombre_med_propio
+                i_copy["med_2_nombre"] = med_2_str
+                interacciones_formateadas.append(i_copy)
+
             neo4j_data = {
                 "principios_activos_analizados": nombres_pa,
-                "interacciones_detectadas": interacciones,
-                "total": len(interacciones),
+                "interacciones_detectadas": interacciones_formateadas,
+                "total": len(interacciones_formateadas),
                 "resumen_por_severidad": {
-                    sev: sum(1 for i in interacciones if i.get("severidad") == sev)
+                    sev: sum(1 for i in interacciones_formateadas if i.get("severidad") == sev)
                     for sev in ("contraindicada", "grave", "moderada", "leve")
                 },
             }

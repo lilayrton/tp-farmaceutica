@@ -302,7 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         html += `
                             <tr>
-                                <td><strong>${c.pa_nuevo}</strong> <i class="fa-solid fa-arrow-right-arrow-left text-muted"></i> <strong>${c.pa_existente}</strong></td>
+                                <td><strong>${c.principio_1}</strong> <i class="fa-solid fa-arrow-right-arrow-left text-muted"></i> <strong>${c.principio_2}</strong></td>
                                 <td><span class="badge ${sevClass}">${c.severidad}</span></td>
                                 <td>${c.mecanismo || 'N/D'}</td>
                             </tr>
@@ -354,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // 3. Adverse Effects History (MongoDB)
-                const aeHistory = result.mongodb.historial_efectos_adversos_grupo_farmacologico || [];
+                const aeHistory = result.mongodb.historial_efectos_adversos_recientes || [];
                 html += `
                     <div>
                         <h3><i class="fa-solid fa-file-medical-flag text-blue"></i> Historial Reciente de Efectos Adversos (MongoDB)</h3>
@@ -442,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div style="background: rgba(255, 75, 107, 0.08); border: 1px solid var(--red); padding: 1.25rem; border-radius: 12px; margin-bottom: 1.5rem;">
                             <h4 class="text-red"><i class="fa-solid fa-biohazard"></i> Ruptura de Cadena de Frío Detectada</h4>
                             <p class="text-primary mt-1"><strong>Vehículo:</strong> ${redisInfo.vehiculo_id} | ${redisInfo.mensaje}</p>
-                            ${redisInfo.alerta_publicada ? `<p class="text-muted text-sm mt-1">Se ha generado una alerta automática con ID: <strong class="font-mono text-purple">${redisInfo.alerta_publicada.alerta_id || redisInfo.alerta_publicada.id}</strong></p>` : ''}
+                            ${redisInfo.alerta_publicada ? `<p class="text-muted text-sm mt-1">Se ha generado una alerta automática con ID: <strong class="font-mono text-purple">${redisInfo.alerta_publicada.alerta_id}</strong></p>` : ''}
                         </div>
                     `;
                 } else {
@@ -466,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 if (temps.length > 0) {
                     temps.forEach(t => {
-                        const tempVal = parseFloat(t.temperatura_celsius);
+                        const tempVal = parseFloat(t.temperatura);
                         const isNormal = tempVal >= 2 && tempVal <= 8;
                         html += `
                             <span class="temp-dot ${isNormal ? 'normal' : 'critical'}" title="Vehículo: ${t.vehiculo_id}">
@@ -492,11 +492,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.01); border-radius: 8px; border: 1px solid var(--border-color);">
                             <div>
                                 <span class="text-muted text-sm">Lote Nro:</span>
-                                <p class="font-mono"><strong>${mongoInfo.lote}</strong></p>
+                                <p class="font-mono"><strong>${mongoInfo.numero_lote}</strong></p>
                             </div>
                             <div>
-                                <span class="text-muted text-sm">Planta Origen:</span>
-                                <p class="font-mono"><strong>${mongoInfo.planta_origen || 'N/D'}</strong></p>
+                                <span class="text-muted text-sm">Medicamento ID:</span>
+                                <p class="font-mono"><strong>${mongoInfo.medicamento_id?.$oid || mongoInfo.medicamento_id}</strong></p>
                             </div>
                             <div>
                                 <span class="text-muted text-sm">Fecha Fabricación:</span>
@@ -511,29 +511,40 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="trace-timeline">
                     `;
 
-                    // Manufacture origin node
+                    // Manufacture Node
                     html += `
                         <div class="trace-node origin">
-                            <div class="trace-node-title">Planta de Manufactura: ${mongoInfo.planta_origen || 'N/D'}</div>
-                            <div class="trace-node-desc">Punto de origen del lote.</div>
+                            <div class="trace-node-title">Planta de Manufactura</div>
+                            <div class="trace-node-desc">Fabricado por el laboratorio creador del medicamento.</div>
                         </div>
                     `;
 
-                    // Distribution history nodes
-                    const dist = mongoInfo.historial_trazabilidad || [];
-                    dist.forEach((d, idx) => {
-                        const fecha = d.fecha ? new Date(d.fecha.$date || d.fecha).toLocaleDateString() : 'N/D';
-                        const isLast = idx === dist.length - 1;
-                        html += `
-                            <div class="trace-node ${isLast ? 'current' : ''}">
-                                <div class="trace-node-title">${d.etapa.charAt(0).toUpperCase() + d.etapa.slice(1)}: ${d.entidad_nombre}</div>
-                                <div class="trace-node-desc">
-                                    Fecha: ${fecha}<br>
-                                    Estado: <span class="${isLast ? 'text-green font-bold' : 'text-blue'}">${isLast ? 'Custodia actual' : 'En tránsito'}</span>
+                    // Distributors Nodes
+                    const dist = mongoInfo.distribucion || [];
+                    if (dist.length > 0) {
+                        dist.forEach(d => {
+                            html += `
+                                <div class="trace-node">
+                                    <div class="trace-node-title">Distribuidor: ${d.distribuidor_id}</div>
+                                    <div class="trace-node-desc">
+                                        Fecha despacho: ${new Date(d.fecha_despacho.$date || d.fecha_despacho).toLocaleDateString()}<br>
+                                        Estado: <span class="text-blue">Entregado</span>
+                                    </div>
                                 </div>
+                            `;
+                        });
+                    }
+
+                    // Current Custody Node
+                    html += `
+                        <div class="trace-node current">
+                            <div class="trace-node-title">Custodia Actual: ${mongoInfo.custodia_actual?.entidad || 'Farmacia / Almacén'}</div>
+                            <div class="trace-node-desc">
+                                Dirección: ${mongoInfo.custodia_actual?.ubicacion || 'En Tránsito'}<br>
+                                Estado de Stock: <span class="text-green font-bold">Disponible</span>
                             </div>
-                        `;
-                    });
+                        </div>
+                    `;
 
                     html += `</div>`; // Close timeline
                 }
@@ -641,12 +652,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (i.severidad === 'contraindicada' || i.severidad === 'grave') sevCls = 'badge-red';
                             else if (i.severidad === 'moderada') sevCls = 'badge-orange';
 
-                            const afectados = (i.medicamentos_afectados || []).slice(0, 3).join(', ');
                             html += `
                                 <tr>
-                                    <td><strong>${i.pa_propio}</strong></td>
+                                    <td><strong>${i.principio_activo_1}</strong> <span class="text-muted">(${i.med_1_nombre || 'N/D'})</span></td>
                                     <td><i class="fa-solid fa-ban text-red"></i></td>
-                                    <td><strong>${i.pa_en_conflicto}</strong> <span class="text-muted text-sm">${afectados ? '(' + afectados + (i.medicamentos_afectados.length > 3 ? '…' : '') + ')' : ''}</span></td>
+                                    <td><strong>${i.principio_activo_2}</strong> <span class="text-muted">(${i.med_2_nombre || 'N/D'})</span></td>
                                     <td><span class="badge ${sevCls}">${i.severidad}</span></td>
                                     <td>${i.mecanismo || 'Sin mecanismo documentado.'}</td>
                                 </tr>
@@ -800,6 +810,89 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // ----------------------------------------------------
+    // Custom Autocomplete Dropdown (replaces browser default datalist)
+    // ----------------------------------------------------
+    const inputsWithSuggestions = document.querySelectorAll('input[data-list]');
+    
+    inputsWithSuggestions.forEach(input => {
+        const datalistId = input.getAttribute('data-list');
+        const datalist = document.getElementById(datalistId);
+        if (!datalist) return;
+        
+        const options = Array.from(datalist.querySelectorAll('option')).map(opt => ({
+            value: opt.value,
+            text: opt.textContent || ''
+        }));
+        
+        let dropdown = null;
+        
+        function showSuggestions(filterText = '') {
+            closeSuggestions();
+            
+            const filtered = options.filter(opt => 
+                opt.value.toLowerCase().includes(filterText.toLowerCase()) ||
+                opt.text.toLowerCase().includes(filterText.toLowerCase())
+            );
+            
+            if (filtered.length === 0) return;
+            
+            dropdown = document.createElement('div');
+            dropdown.className = 'custom-autocomplete-dropdown';
+            
+            dropdown.style.width = `${input.offsetWidth}px`;
+            dropdown.style.top = `${input.offsetTop + input.offsetHeight}px`;
+            dropdown.style.left = `${input.offsetLeft}px`;
+            
+            filtered.forEach(opt => {
+                const item = document.createElement('div');
+                item.className = 'custom-autocomplete-item';
+                
+                const valSpan = document.createElement('span');
+                valSpan.className = 'item-value';
+                valSpan.textContent = opt.value;
+                item.appendChild(valSpan);
+                
+                if (opt.text) {
+                    const descSpan = document.createElement('span');
+                    descSpan.className = 'item-desc';
+                    descSpan.textContent = opt.text;
+                    item.appendChild(descSpan);
+                }
+                
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    input.value = opt.value;
+                    input.dispatchEvent(new Event('input'));
+                    closeSuggestions();
+                });
+                
+                dropdown.appendChild(item);
+            });
+            
+            input.parentNode.appendChild(dropdown);
+        }
+        
+        function closeSuggestions() {
+            if (dropdown) {
+                dropdown.remove();
+                dropdown = null;
+            }
+        }
+        
+        input.addEventListener('focus', () => {
+            showSuggestions(input.value);
+        });
+        
+        input.addEventListener('input', () => {
+            showSuggestions(input.value);
+        });
+        
+        input.addEventListener('blur', () => {
+            setTimeout(closeSuggestions, 150);
+        });
+    });
 });
 
 // ----------------------------------------------------

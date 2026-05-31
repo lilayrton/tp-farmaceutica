@@ -809,3 +809,57 @@ body {
         gap: 1rem;
     }
 }
+
+/* Custom Autocomplete / Suggestions Dropdown */
+.form-container .grid-card {
+    overflow: visible;
+}
+
+.form-group {
+    position: relative;
+}
+
+.custom-autocomplete-dropdown {
+    position: absolute;
+    background: #111827;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+    margin-top: 4px;
+}
+
+.custom-autocomplete-item {
+    padding: 0.65rem 1rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.custom-autocomplete-item:last-child {
+    border-bottom: none;
+}
+
+.custom-autocomplete-item:hover {
+    background: rgba(59, 130, 246, 0.1);
+    color: white;
+    border-left: 3px solid var(--primary);
+    padding-left: calc(1rem - 3px);
+}
+
+.custom-autocomplete-item .item-value {
+    font-weight: 500;
+}
+
+.custom-autocomplete-item .item-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
