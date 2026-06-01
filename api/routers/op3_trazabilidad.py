@@ -61,11 +61,18 @@ def trazabilidad_y_cadena_frio(
                 "temperatura": t.get("temperatura_celsius")
             })
 
+        alerta_pub = ruptura.get("alerta_publicada")
+        if alerta_pub:
+            alerta_pub = {
+                **alerta_pub,
+                "alerta_id": alerta_pub.get("id")
+            }
+
         redis_data = {
             "vehiculo_id": vehiculo_id,
             "ruptura_detectada": ruptura["ruptura_detectada"],
             "mensaje": ruptura.get("mensaje", "Sin rupturas detectadas"),
-            "alerta_publicada": ruptura.get("alerta_publicada"),
+            "alerta_publicada": alerta_pub,
             "tendencia_ultimas_12_lecturas": compat_tendencia,
         }
     except Exception as e:
