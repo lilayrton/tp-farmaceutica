@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 import redis
 
 from redis_db.queries.a_alertas_farmacovigilancia import publicar_alerta, KEY as ALERTAS_KEY
-from redis_db.queries.b_cadena_frio import registrar_lectura, STREAM_KEY
+from redis_db.queries.b_cadena_frio import registrar_lectura, stream_key_vehiculo
 from redis_db.queries.c_control_acceso import (
     otorgar_acceso,
     encolar_reporte,
@@ -81,8 +81,11 @@ def _generar_lecturas_vehiculo(vehiculo_id: str, n: int, incluir_ruptura: bool =
     return lecturas
 
 
+_VEHICULOS_SEED = ("VEH001", "VEH002", "VEH003")
+
+
 def seed_temperatura(r: redis.Redis) -> int:
-    r.delete(STREAM_KEY)
+    r.delete(*[stream_key_vehiculo(v) for v in _VEHICULOS_SEED])
     total = 0
 
     # VEH001: 10 lecturas normales
@@ -100,7 +103,7 @@ def seed_temperatura(r: redis.Redis) -> int:
         registrar_lectura(r, *args)
         total += 1
 
-    print(f"  [Redis] {total} lecturas de temperatura cargadas en STREAM '{STREAM_KEY}'")
+    print(f"  [Redis] {total} lecturas de temperatura cargadas en STREAMs 'temperatura:vehiculo:{{VEH001,VEH002,VEH003}}'")
     print("  [Redis] VEH002 tiene ruptura de cadena de frío (últimas 2 lecturas fuera de rango)")
     return total
 

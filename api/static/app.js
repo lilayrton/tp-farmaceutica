@@ -302,8 +302,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         html += `
                             <tr>
-                                <td><strong>${c.principio_1}</strong> <i class="fa-solid fa-arrow-right-arrow-left text-muted"></i> <strong>${c.principio_2}</strong></td>
-                                <td><span class="badge ${sevClass}">${c.severidad}</span></td>
+                            <td><strong>${c.pa_nuevo || c.principio_1}</strong> <i class="fa-solid fa-arrow-right-arrow-left text-muted"></i> <strong>${c.pa_existente || c.principio_2}</strong></td>    
+                            <td><span class="badge ${sevClass}">${c.severidad}</span></td>
                                 <td>${c.mecanismo || 'N/D'}</td>
                             </tr>
                         `;
@@ -758,7 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                             <div>
                                 <span class="text-muted text-sm">Remoción de Redis:</span>
-                                <p>Removida de ZSET: <strong>${result.redis.alerta_eliminada ? 'Sí' : 'No'}</strong></p>
+                                <p>Removida de ZSET: <strong>${result.redis.alerta_consumida ? 'Sí' : 'No'}</strong></p>
                                 ${result.redis.contador_decrementado ? `<p class="text-orange text-sm">Contador 24h decrementado. Actual: <strong>${result.redis.contador_actual}</strong></p>` : ''}
                             </div>
                         </div>

@@ -1,15 +1,18 @@
 """
-STREAM: temperatura:stream
-Campos por entrada: vehiculo_id, temperatura_celsius, latitud, longitud
+STREAM por vehículo: temperatura:vehiculo:{vehiculo_id}
+Campos por entrada: temperatura_celsius, latitud, longitud
 Rango seguro de temperatura para medicamentos: 2.0 – 8.0 °C
 """
 import redis
 
 from redis_db.queries.a_alertas_farmacovigilancia import publicar_alerta
 
-STREAM_KEY = "temperatura:stream"
 TEMP_MIN = 2.0
 TEMP_MAX = 8.0
+
+
+def stream_key_vehiculo(vehiculo_id: str) -> str:
+    return f"temperatura:vehiculo:{vehiculo_id}"
 
 
 def registrar_lectura(
@@ -19,11 +22,10 @@ def registrar_lectura(
     latitud: float,
     longitud: float,
 ) -> str:
-    """Registra una lectura de temperatura en el STREAM. Retorna el ID de la entrada."""
+    """Registra una lectura de temperatura en el STREAM del vehículo. Retorna el ID de la entrada."""
     entry_id = r.xadd(
-        STREAM_KEY,
+        stream_key_vehiculo(vehiculo_id),
         {
-            "vehiculo_id": vehiculo_id,
             "temperatura_celsius": str(temperatura_celsius),
             "latitud": str(latitud),
             "longitud": str(longitud),
@@ -38,22 +40,18 @@ def obtener_ultimas_lecturas(
     n: int = 12,
 ) -> list[dict]:
     """Retorna las últimas n lecturas del vehículo para análisis de tendencia."""
-    # XREVRANGE trae las más recientes primero
-    all_entries = r.xrevrange(STREAM_KEY, count=n * 5)
+    entries = r.xrevrange(stream_key_vehiculo(vehiculo_id), count=n)
     lecturas = []
-    for entry_id, fields in all_entries:
-        if fields.get("vehiculo_id") == vehiculo_id:
-            lecturas.append(
-                {
-                    "id": entry_id,
-                    "vehiculo_id": fields["vehiculo_id"],
-                    "temperatura_celsius": float(fields["temperatura_celsius"]),
-                    "latitud": float(fields["latitud"]),
-                    "longitud": float(fields["longitud"]),
-                }
-            )
-            if len(lecturas) >= n:
-                break
+    for entry_id, fields in entries:
+        lecturas.append(
+            {
+                "id": entry_id,
+                "vehiculo_id": vehiculo_id,
+                "temperatura_celsius": float(fields["temperatura_celsius"]),
+                "latitud": float(fields["latitud"]),
+                "longitud": float(fields["longitud"]),
+            }
+        )
     return lecturas
 
 
@@ -117,8 +115,8 @@ if __name__ == "__main__":
 
     registrar_lectura(r, "VEH001", 4.5, -34.6, -58.4)
     registrar_lectura(r, "VEH001", 5.1, -34.7, -58.5)
-    registrar_lectura(r, "VEH002", 12.3, -33.4, -60.2)
-    registrar_lectura(r, "VEH002", 14.7, -33.5, -60.3)
+    registrar_lectura(r, "VEH002", 12.3, -33.4, -60.2)  # fuera de rango
+    registrar_lectura(r, "VEH002", 14.7, -33.5, -60.3)  # fuera de rango
 
     print("Tendencia VEH001:")
     for l in consultar_tendencia(r, "VEH001"):
