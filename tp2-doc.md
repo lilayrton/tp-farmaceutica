@@ -139,7 +139,7 @@ Todas las claves siguen el patrón entidad:identificador:atributo indicadas en l
 
 | alertas:farmacovigilancia         → SORTED SET  — alertas activas ordenadas por score |
 | :---- |
-| temperatura:stream                → STREAM       — log inmutable de lecturas de temperatura |
+| temperatura:vehiculo:{vehiculo\_id} → STREAM       — log inmutable de lecturas de temperatura por vehículo |
 | cola:efectos\_adversos             → LIST         — reportes FIFO pendientes de evaluación |
 | acceso:ensayo:{ens\_id}:{inv\_id}   → HASH+TTL     — permisos de acceso con vencimiento |
 | contador:efectos:{med\_id}         → STRING+EXPIRE — contador de reportes en ventana 24h |
@@ -148,7 +148,7 @@ Todas las claves siguen el patrón entidad:identificador:atributo indicadas en l
 
 | SORTED SET | alertas:farmacovigilancia | Cola de alertas activas ordenadas por score compuesto (severidad × urgencia\_por\_tipo) | ZADD al publicar (`publicar_alerta()`). ZPOPMAX (`consumir_alerta_maxima()`) para consumo ciego de la alerta de mayor score sin conocer su ID. ZREVRANGE (`listar_alertas_activas()`) para listar ordenadas sin eliminar. ZINCRBY (`escalar_alerta(alerta_id, incremento)`) para aumentar el score de una alerta existente si se confirma el riesgo. ZREM (`eliminar_alerta(alerta_id)`) para eliminar una alerta específica por ID en OP-5. Filtrado por tipo: ZREVRANGE WITHSCORES + filter en Python por `json.loads(member)['tipo'] == tipo_buscado`. |
 | :---- | :---- | :---- | :---- |
-| STREAM | temperatura:stream | Log inmutable de lecturas de temperatura: vehiculo\_id, temperatura\_celsius, latitud, longitud | XADD al registrar. XREVRANGE para obtener últimas lecturas por vehículo. Detección de ruptura sobre 2 lecturas consecutivas fuera de rango \[2°C, 8°C\]. |
+| STREAM | temperatura:vehiculo:{vehiculo\_id} | Log inmutable de lecturas de temperatura por vehículo: temperatura\_celsius, latitud, longitud. Un Stream independiente por vehículo refrigerado. | XADD al registrar (`stream_key_vehiculo(vehiculo_id)`). XREVRANGE con count=n directo al stream del vehículo, sin filtrado en Python. Detección de ruptura sobre 2 lecturas consecutivas fuera de rango \[2°C, 8°C\]. |
 | LIST | cola:efectos\_adversos | Cola FIFO de reportes de efectos adversos pendientes de evaluación médica | LPUSH al recibir reporte. RPOP cuando el médico toma el caso. LLEN para tamaño de cola en OP-1. |
 | HASH \+ TTL | acceso:ensayo:{ens}:{inv} | Control de acceso temporal a ensayos clínicos: investigador\_id, rol, institución, permisos, timestamp | HSET \+ EXPIRE al otorgar. HGETALL \+ TTL para verificar. EXPIRE automático revoca el acceso sin código adicional. |
 | STRING \+ EXPIRE | contador:efectos:{med\_id} | Contador de reportes adversos por medicamento en ventana deslizante de 24 horas | INCR atómico. EXPIRE de 86400s en creación. DECR en OP-5 si resultado es falso\_positivo. KEYS para listar sobre umbral. |
@@ -538,7 +538,7 @@ Endpoint: GET /lote/{numero\_lote}/trazabilidad?vehiculo\_id=VEH001
 ### Flujo de consultas implementado: {#flujo-de-consultas-implementado:-2}
 
 1. **Redis**  
-   obtener\_ultimas\_lecturas(vehiculo\_id, n=12) usa XREVRANGE temperatura:stream con count=60 para filtrar por vehiculo\_id y recuperar hasta 12 lecturas recientes del vehículo. detectar\_ruptura\_cadena\_frio() toma las 2 más recientes de ese conjunto y verifica si ambas están fuera del rango \[2°C, 8°C\]. Este diseño garantiza encontrar 2 lecturas del vehículo aunque el STREAM global tenga entradas intercaladas de otros vehículos. Si ruptura=True, llama a publicar\_alerta() con severidad=5 y tipo=lote\_comprometido.  
+   obtener\_ultimas\_lecturas(vehiculo\_id, n=12) usa XREVRANGE temperatura:vehiculo:{vehiculo\_id} con count=12 directamente sobre el stream propio del vehículo. Cada vehículo tiene su propio Stream independiente (temperatura:vehiculo:VEH001, temperatura:vehiculo:VEH002, etc.). detectar\_ruptura\_cadena\_frio() toma las 2 lecturas más recientes de ese stream y verifica si ambas están fuera del rango \[2°C, 8°C\]. Si ruptura=True, llama a publicar\_alerta() con severidad=5 y tipo=lote\_comprometido.  
    consultar\_tendencia() devuelve las últimas 12 lecturas para análisis visual.  
 2. **MongoDB**  
    trazabilidad\_lote() ejecuta el pipeline de $match por numero\_lote (usa índice único idx\_lotes\_numero, O(1)) \+ $project con cadena\_distribucion embebida.  
