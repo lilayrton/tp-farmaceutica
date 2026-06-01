@@ -514,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Manufacture Node
                     html += `
                         <div class="trace-node origin">
-                            <div class="trace-node-title">Planta de Manufactura</div>
+                            <div class="trace-node-title">Planta de Manufactura: ${mongoInfo.planta_origen || 'N/D'}</div>
                             <div class="trace-node-desc">Fabricado por el laboratorio creador del medicamento.</div>
                         </div>
                     `;
