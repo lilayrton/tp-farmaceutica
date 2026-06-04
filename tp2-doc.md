@@ -467,17 +467,7 @@ Endpoint: GET /panel
 
 El equipo de farmacovigilancia necesita una vista unificada del estado de riesgo del sistema. Los tres motores se consultan en bloques try/except independientes para garantizar que el panel siempre responda aunque un motor falle.
 
-### Flujo de consultas implementado: {#flujo-de-consultas-implementado:}
-
-1. **Redis**  
-   listar\_alertas\_activas() → ZREVRANGE 0 \- 1 WITHSCORES, se toman las primeras 5\. tamanio\_cola() → LLEN.  
-   obtener\_contadores\_elevados(umbral=5) → KEYS contador:efectos:\* \+ GET de cada clave.  
-2. **MongoDB**  
-   Aggregation pipeline sobre efectos\_adversos: $match por fecha \>= 30 días atrás, $group por medicamento\_id con $sum:1, $sort descendente, $limit 10, $lookup con medicamentos para obtener nombre\_comercial.  
-3. **Neo4j**  
-   MATCH (pa:PrincipioActivo) \- \[i:INTERACTUA\_CON\] \- (:PrincipioActivo) WHERE i.severidad IN \[‘grave’, ‘contraindicada’\] WITH pa, count(i) AS total ORDER BY total DESC LIMIT 5\.  
-4. **Resultado**  
-   El endpoint agrega los tres resultado en un único objeto JSON con claves redis, mongodb, neo4j y un campo opcional de errores por si algún motor no respondió.
+El panel consulta los tres motores de forma independiente. Redis responde primero porque su latencia es sub-milisegundo: devuelve las cinco alertas con mayor score compuesto del SORTED SET, el tamaño de la cola de evaluación y los contadores de efectos adversos que superan el umbral configurado. Luego, MongoDB agrega los reportes de efectos adversos de los últimos 30 días para determinar cuáles son los diez medicamentos con mayor actividad reciente. Por último, Neo4j recorre el grafo de interacciones para identificar los cinco principios activos con mayor cantidad de relaciones graves o contraindicadas. Los tres resultados se agregan en la respuesta bajo las claves `redis`, `mongodb` y `neo4j`; si algún motor falla, el error queda registrado en el campo `errores` sin interrumpir la respuesta del panel.
 
 > **[SCREENSHOT — OP-1]** `GET http://localhost:8000/panel` — sin parámetros.
 > La captura debe mostrar el JSON de respuesta completo (Swagger UI o `/dashboard`). Verificar que estén presentes:
@@ -501,20 +491,9 @@ Endpoint: POST /prescripcion/verificar
 
 Request body: {"paciente\_id": "PAC-2026-12035", "medicamento\_id": "MED001"}
 
-### Flujo de consultas implementado: {#flujo-de-consultas-implementado:-1}
+El orden de las consultas no es arbitrario: cada motor depende del resultado del anterior. El primer paso es MongoDB, que recupera los principios activos del medicamento que se quiere prescribir. Sin esa lista, Neo4j no tiene punto de partida para recorrer el grafo. Una vez obtenidos los PAs, Neo4j cruza los medicamentos que el paciente ya toma con el nuevo, buscando relaciones `INTERACTUA_CON` entre sus principios activos y ordenando los conflictos por severidad descendente (contraindicada → grave → moderada → leve). El resultado de Neo4j condiciona lo que pasa después en Redis: si se detectó alguna interacción grave o contraindicada, se publica una nueva alerta en el SORTED SET con severidad máxima. Redis se consulta también en lectura, para traer alertas ya existentes sobre el mismo medicamento. Finalmente, MongoDB se consulta una segunda vez para obtener el historial de efectos adversos del grupo farmacológico completo (todos los medicamentos que comparten al menos un principio activo) en los últimos 6 meses. Este bloque no condiciona ninguna escritura; su propósito es proveer evidencia poblacional que enriquece la respuesta.
 
-0. **MongoDB (paso previo)**  
-   `_mongo_pa_del_medicamento(medicamento_id)` recupera el documento del medicamento a prescribir y extrae los nombres e IDs de sus principios activos. Este paso es necesario para que Neo4j pueda buscar interacciones con los PAs del medicamento nuevo.  
-1. **Neo4j**  
-   `_neo4j_interacciones_prescripcion(paciente_id, pa_del_nuevo)`: dado el listado de PAs del medicamento a prescribir, hace MATCH del paciente a través de TOMA → CONTIENE → PrincipioActivo para obtener los PAs de los medicamentos que ya toma. Luego cruza ambos conjuntos buscando INTERACTUA\_CON entre los PAs del nuevo y los del paciente. Ordena por severidad descendente (contraindicada → grave → moderada → leve).  
-2. **Redis (lectura)**  
-   listar\_alertas\_activas() filtrando por medicamento\_id del request.  
-   Devuelve solo las alertas que corresponden al medicamento a prescribir.  
-3. **MongoDB**  
-   `_mongo_historial_efectos_grupo(pa_oids)`: busca en la colección `medicamentos` todos los documentos que comparten al menos un principio activo con el medicamento a prescribir, luego agrega los efectos adversos de ese grupo farmacológico en los últimos 6 meses (limit 10, orden descendente por fecha). Esto provee evidencia poblacional del grupo, no solo del medicamento exacto.  
-4. **Redis (escritura condicional)**  
-   Si Neo4j detectó alguna interacción con severidad ‘grave’ o ‘contraindicada’, publicar\_alerta() hace ZADD con severidad=5, tipo=interaccion\_grave y descripción contextualizada con paciente\_id y medicamento\_id.  
-   
+Cuando los tres motores detectan riesgo simultáneamente no hay contradicción, sino capas complementarias: Neo4j confirma una interacción entre los PAs, Redis señala que el medicamento ya tiene alertas activas en el sistema, y MongoDB muestra antecedentes del grupo farmacológico. El campo `riesgo_alto` en la respuesta es `true` si Neo4j detectó al menos una interacción grave o contraindicada, o si Redis ya tiene alertas activas sobre ese medicamento.
 
 > **[SCREENSHOT — OP-2]** `POST http://localhost:8000/prescripcion/verificar`
 > Body: `{"paciente_id": "PAC-2026-12035", "medicamento_id": "MED001"}`
@@ -525,25 +504,13 @@ Request body: {"paciente\_id": "PAC-2026-12035", "medicamento\_id": "MED001"}
 > - `historial_efectos_adversos_grupo_farmacologico`: reportes de los últimos 6 meses del grupo farmacológico.
 > *(Reemplazar este bloque por la imagen real y un caption breve una vez tomada la captura.)*
 
-El orden de las consultas es fundamental: el paso previo MongoDB obtiene los PAs del medicamento nuevo, que son el input de Neo4j. Neo4j se ejecuta antes que Redis porque su resultado condiciona la escritura en Redis. MongoDB (historial) se consulta al final porque su resultado no condiciona ninguna escritura, solo enriquece la respuesta.
-
-**Si los tres motores detectan riesgo simultáneamente:** no hay contradicción entre los motores, sino acumulación de evidencia. Neo4j confirma una interacción directa entre los PAs del nuevo medicamento y los del paciente (conocimiento estructural del grafo), Redis informa que ya hay una alerta activa sobre ese medicamento (estado operativo en tiempo real) y MongoDB muestra antecedentes del grupo farmacológico al que pertenece el medicamento (evidencia poblacional de efectos adversos en medicamentos similares). En este caso el sistema: (a) devuelve `riesgo_alto: true`; (b) publica la nueva alerta en el SORTED SET con severidad máxima; (c) incluye los tres bloques de evidencia en la respuesta JSON bajo las claves `interacciones`, `alertas_activas` y `historial_efectos_adversos_grupo_farmacologico`.
-
-Campo riesgo\_alto en la respuesta: True si hay\_grave (Neo4j detectó interacción contraindicada/grave) OR len(alertas\_activas) \> 0 (Redis tiene alertas sobre ese medicamento).
-
 ## OP-3: Trazabilidad de lote y alerta de ruptura de cadena de frío (2 motores) {#op-3:-trazabilidad-de-lote-y-alerta-de-ruptura-de-cadena-de-frío-(2-motores)}
 
 Endpoint: GET /lote/{numero\_lote}/trazabilidad?vehiculo\_id=VEH001
 
-### Flujo de consultas implementado: {#flujo-de-consultas-implementado:-2}
+La operación prioriza la detección de ruptura antes de cualquier otra consulta, porque si el lote está comprometido esa información es urgente y Redis ya la tiene disponible en memoria. Cada vehículo tiene su propio Stream de temperatura en Redis (una clave por vehículo), lo que permite leer las últimas lecturas facilmente. La ruptura se confirma cuando las dos lecturas más recientes están ambas fuera del rango [2°C, 8°C]: si eso ocurre, se publica automáticamente una alerta de `lote_comprometido` con severidad máxima. Las últimas 12 lecturas también se incluyen en la respuesta para análisis visual de la tendencia.
 
-1. **Redis**  
-   obtener\_ultimas\_lecturas(vehiculo\_id, n=12) usa XREVRANGE temperatura:vehiculo:{vehiculo\_id} con count=12 directamente sobre el stream propio del vehículo. Cada vehículo tiene su propio Stream independiente (temperatura:vehiculo:VEH001, temperatura:vehiculo:VEH002, etc.). detectar\_ruptura\_cadena\_frio() toma las 2 lecturas más recientes de ese stream y verifica si ambas están fuera del rango \[2°C, 8°C\]. Si ruptura=True, llama a publicar\_alerta() con severidad=5 y tipo=lote\_comprometido.  
-   consultar\_tendencia() devuelve las últimas 12 lecturas para análisis visual.  
-2. **MongoDB**  
-   trazabilidad\_lote() ejecuta el pipeline de $match por numero\_lote (usa índice único idx\_lotes\_numero, O(1)) \+ $project con cadena\_distribucion embebida.  
-   Devuelve el historial completo desde planta hasta el último punto de dispensación sin JOINs.  
-   
+Una vez evaluada la cadena de frío, MongoDB aporta el contexto del lote: su trazabilidad completa desde planta hasta el punto de dispensación. Esta consulta utiliza el índice sobre `numero_lote`, por lo que es O(1) independientemente del volumen total de lotes. La cadena de distribución está embebida directamente en el documento, así que no hay JOINs ni lookups adicionales, se obtiene todo en una sola lectura.
 
 > **[SCREENSHOT — OP-3]** `GET http://localhost:8000/lote/LOT-0001/trazabilidad?vehiculo_id=VEH002`
 > *(Reemplazar `LOT-0001` por cualquier número de lote válido del seed. VEH002 tiene ruptura de cadena de frío garantizada por el generador de datos.)*
@@ -563,16 +530,9 @@ Endpoints: GET /medicamento/{medicamento\_id}/interacciones
 
 También acepta: GET /medicamento/nuevo/interacciones?principios\_activos=Amoxicilina\&principios\_activos=Clavulanato
 
-### Flujo de consultas implementado: {#flujo-de-consultas-implementado:-3}
+El endpoint acepta dos formas de invocación: con un `medicamento_id` de un medicamento ya registrado, o con una lista explícita de principios activos para medicamentos aún no ingresados al sistema. En el primer caso, MongoDB resuelve la lista de PAs buscando el documento por `_id`. En el segundo, los PAs se reciben directamente del request. En ambos casos el resultado es el mismo: una lista de nombres de principios activos.
 
-1. **MongoDB**  
-   Si `medicamento_id` es un ObjectId válido, busca el documento en medicamentos, extrae el array `principios_activos` por `_id` para obtener el nombre. El resultado es la lista de nombres de PA del medicamento.
-2. **Neo4j**  
-   prediccion\_interacciones(pa\_del\_nuevo) ejecuta la consulta 3.5.e de la primera entrega: MATCH (pa\_nuevo:PrincipioActivo) \- \[i:INTERACTUA\_CON\] \- (pa\_existente) WHERE NOT pa\_existente.nombre IN pa\_del\_nuevo MATCH (med\_existente: Medicamento) \- \[:CONTIENE\] \-\> (pa\_existente) WHERE med\_existente.estado=’activo’.  
-   Ordena por severidad descendente.  
-   
-
-La respuesta incluye resumen\_por\_severidad que agrupa la cantidad de interacciones detectadas por nivel (contraindicada, grave, moderada, leve), facilitando la evaluación regulatoria.
+Con esa lista, Neo4j recorre el grafo buscando todos los principios activos que interactúan con alguno del nuevo medicamento y que además están presentes en medicamentos con estado activo en el mercado. Esta consulta es exclusivamente de grafo: implica traversals sobre relaciones `INTERACTUA_CON` y `CONTIENE`. El resultado se agrupa por nivel de severidad en el campo `resumen_por_severidad` (contraindicada, grave, moderada, leve), facilitando la evaluación regulatorioa.
 
 > **[SCREENSHOT — OP-4]** `GET http://localhost:8000/medicamento/MED001/interacciones`
 > *(Alternativamente, usar el endpoint con PAs explícitos: `GET /medicamento/nuevo/interacciones?principios_activos=Amoxicilina&principios_activos=Clavulanato`)*
@@ -591,28 +551,11 @@ El análisis de interacciones para un medicamento es una consulta de conocimient
 
 Endpoint: POST /alerta/cerrar
 
-### Flujo implementado: generación → evaluación → resolución {#flujo-implementado:-generación-→-evaluación-→-resolución}
+El ciclo de vida de una alerta empieza cuando alguna operación anterior (OP-2 o OP-3) la publica en Redis con su score compuesto. Desde ahí, el panel de OP-1 la muestra al equipo de farmacovigilancia entre las cinco alertas de mayor prioridad. Cuando un investigador decide cerrarla, OP-5 entra en acción.
 
-1. **Generación (Redis)**  
-   La alerta vive en SORTED SET con su score compuesto:  
-   ZADD alertas:farmacovigilancia score payload  
-2. **Visualización (Redis OP-1)**  
-   El médico ve la alerta en el panel:  
-   ZREVRANGE → top 5 alertas activas  
-3. **Consumo (Redis)**  
-   La alerta de mayor score es extraída atómicamente:  
-   consumir\_alerta\_maxima() → ZPOPMAX alertas:farmacovigilancia 1  
-4. **Persistencia (MongoDB)**  
-   Dictamen permanente en historial:  
-   insert\_one en dictamenes\_alertas con resultado, investigador, acciones\_tomadas, fecha\_cierre.  
-5. Si  
-   1. **Sí, confirmado (Neo4j)**  
-      Grafo actualizado con nueva evidencia o severidad revisada:  
-      MERGE(pa1) \- \[i:INTERACTUA\_CON {tipo}\] \-\> (pa2) ON CREATE SET / ON MATCH SET  
-   2. **Sí, falso positivo (Redis)**  
-      Señal de farmacovigilancia corregida:  
-      DECR contador:efectos:{med\_id} \+ max(0, valor) para evitar negativos  
-      
+El primer paso es consumir la alerta de mayor score de Redis mediante `ZPOPMAX`. Esta operación es atómica (no puede ejecutarse dos veces para la misma alerta) pero también es destructiva: una vez consumida, la alerta desaparece del SORTED SET. Eso es precisamente lo que justifica el patrón Saga en esta operación y no en las demás: si algún paso posterior falla, el Saga tiene que devolver la alerta a Redis para no perder información.
+
+Una vez consumida, el dictamen se persiste en MongoDB con el resultado del análisis, el investigador responsable, las acciones tomadas y la fecha de cierre. Este registro es la trazabilidad permanente del proceso de farmacovigilancia. Lo que ocurre después depende del resultado declarado: si el investigador confirma la alerta y provee datos de una nueva interacción, Neo4j ejecuta un MERGE sobre la relación entre los principios activos involucrados, creándola si no existía o actualizando sus propiedades si ya estaba en el grafo. Si en cambio el resultado es falso positivo, Neo4j queda fuera del flujo y en su lugar Redis decrementa el contador de efectos adversos del medicamento, corrigiendo la señal que originó la alerta.
 
 > **[SCREENSHOT — OP-5]** `POST http://localhost:8000/alerta/cerrar`
 > Body sugerido (resultado confirmado con nueva interacción para ejercitar los 3 motores y el flujo Saga completo):

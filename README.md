@@ -1,19 +1,53 @@
 # TP Farmacéutica - Base de Datos 2
 
-Sistema de gestión de información farmacéutica con arquitectura **poliglota** (MongoDB + Neo4j + Redis), expuesto mediante una API REST construida con FastAPI.
-
-## Descripción
-
-| Motor | Responsabilidad | Datos que gestiona |
-|-------|----------------|--------------------|
-| **MongoDB** | Fuente de verdad histórica | Medicamentos, lotes, distribuidores, ensayos clínicos, efectos adversos |
-| **Neo4j** | Red de relaciones y grafos | Interacciones entre principios activos, detección de combinaciones peligrosas |
-| **Redis** | Estado operativo en tiempo real | Alertas de farmacovigilancia, monitoreo de cadena de frío, cola de evaluación, control de acceso |
+Sistema de gestión de información farmacéutica con arquitectura **poliglota** (MongoDB + Neo4j + Redis), expuesto mediante una API REST construida con FastAPI y consumida desde un dashboard expuesto en "/dashboard".
 
 ## Requisitos Previos
 
 - **Python 3.11+**
 - **Docker y Docker Compose**
+
+Es posible que al instalar Docker también pida instalar WSL 2.
+
+
+## Instalación
+
+Requiere únicamente **Docker y Docker Compose**.
+
+```bash
+# 1. Levantar todos los servicios (bases de datos + API)
+docker compose up -d
+
+# 2. Cargar datos de prueba (solo ejecutar la 1ra vez cuando aún no hay datos)
+docker compose exec api python seed/generar_datos.py --all --redis-load
+```
+
+## Desarrollo
+
+Una vez que ya está en la compu y se quiere levantar el proyecto:
+
+```bash
+# Con este comando se levanta todo
+docker compose up -d
+
+# Con este otro comando frena todo el proyecto
+docker compose down
+```
+
+Servicios disponibles:
+
+| Servicio | URL / Puerto |
+|---------|-------------|
+| MongoDB | `localhost:27017` |
+| Mongo Express (UI) | `http://localhost:8081` |
+| Neo4j Browser | `http://localhost:7474` (user: `neo4j` / pass: `farmaceutica`) |
+| Neo4j Bolt | `localhost:7687` |
+| Redis | `localhost:6379` |
+| Redis Commander (UI) | `http://localhost:8082` |
+| **URL del API** | `http://localhost:8000` |
+| **Documentación** | `http://localhost:8000/docs` |
+
+---
 
 ## Estructura del Proyecto
 
@@ -44,57 +78,15 @@ tp-farmaceutica/
 │       └── op5_cierre_alerta.py       # POST /alerta/cerrar
 ├── seed/
 │   ├── config.py
-│   ├── generar_datos.py       # Script principal (soporta --redis-load)
+│   ├── generar_datos.py       # Script principal
 │   ├── datos_maestros.py
 │   ├── generador_mongo.py
 │   ├── generador_neo4j.py
 │   └── generador_redis.py     # Seed para Redis (TP2)
 ├── docker-compose.yml         # MongoDB + Neo4j + Redis + API
-├── Dockerfile                 # Imagen de la API (python:3.11-slim)
+├── Dockerfile                 # Imagen de la API
 └── requirements.txt
 ```
-
----
-
-## Instalación
-
-Requiere únicamente **Docker y Docker Compose**.
-
-```bash
-# 1. Clonar el repositorio
-git clone https://github.com/valentinnavalos/tp-farmaceutica.git
-cd tp-farmaceutica
-
-# 2. Levantar todos los servicios (bases de datos + API)
-docker compose up -d
-
-# 3. Cargar datos de prueba (solo ejecutar la 1ra vez cuando aún no hay datos)
-make seed
-```
-
-## Desarrollo
-
-Una vez que ya está en la compu y se quiere levantar el proyecto:
-
-```bash
-# Con este comando se levanta todo
-docker compose up -d
-
-# Con este otro comando para todo el proyecto
-docker compose down
-```
-
-Servicios disponibles:
-
-| Servicio | URL / Puerto |
-|---------|-------------|
-| MongoDB | `localhost:27017` |
-| Mongo Express (UI) | `http://localhost:8081` |
-| Neo4j Browser | `http://localhost:7474` (user: `neo4j` / pass: `farmaceutica`) |
-| Neo4j Bolt | `localhost:7687` |
-| Redis | `localhost:6379` |
-| **API** | `http://localhost:8000` |
-| **Documentación interactiva** | `http://localhost:8000/docs` |
 
 ---
 
@@ -293,18 +285,3 @@ redis-cli ping   # debe responder PONG
 # Siempre ejecutar desde la raíz del proyecto con PYTHONPATH=.
 PYTHONPATH=. python -m mongodb.queries.a_trazabilidad
 ```
-
----
-
-## Tecnologías
-
-- **Python 3.11+**
-- **MongoDB 7** + pymongo
-- **Neo4j 5** + neo4j-driver
-- **Redis 7** + redis-py
-- **FastAPI** + Uvicorn
-- **Docker & Docker Compose**
-
----
-
-*Trabajo Práctico Integrador — Ingeniería de Datos II — UADE*

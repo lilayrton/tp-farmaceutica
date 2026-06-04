@@ -20,8 +20,8 @@ Hay dos iteraciones:
 
 ```bash
 docker compose up -d        # Levantar todos los servicios
-make seed                   # Poblar bases de datos (solo primer arranque)
-make down                   # Bajar servicios
+docker compose exec api python seed/generar_datos.py --all --redis-load                   # Poblar bases de datos (solo primer arranque)
+docker compose down                   # Bajar servicios
 docker compose down -v      # Reset completo (borra volúmenes)
 PYTHONPATH=. python run_demo.py  # Demo completo TP1
 ```
@@ -34,6 +34,7 @@ PYTHONPATH=. python run_demo.py  # Demo completo TP1
 | Swagger Docs | http://localhost:8000/docs | — |
 | Dashboard | http://localhost:8000/dashboard | — |
 | Mongo Express | http://localhost:8081 | anónimo |
+| Redis Commander | http://localhost:8082 | anónimo |
 | Neo4j Browser | http://localhost:7474 | neo4j / farmaceutica |
 
 ## Estructura de Directorios

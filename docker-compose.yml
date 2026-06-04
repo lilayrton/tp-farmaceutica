@@ -56,6 +56,17 @@ services:
       timeout: 5s
       retries: 5
 
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: farmaceutica_redis_commander
+    ports:
+      - "8082:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
   api:
     build: .
     container_name: farmaceutica_api
